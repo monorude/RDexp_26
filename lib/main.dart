@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:ffi';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 void main() {
+  initializeDateFormatting('ja');
   runApp(const MyApp());
 }
 
@@ -92,6 +91,7 @@ class _ClockTimerState extends State<ClockTimer> {
 }
 
 
+
 class _MyHomePageState extends State<MyHomePage> {
 
   void _incrementCounter() {
@@ -132,13 +132,12 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      
+      /*
       body: Column(children: [
         Center(
           child: Container(
             width: 288,
             height: 24,
-            alignment: Alignment.center,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               color: Colors.blue),
@@ -146,7 +145,9 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
         ),
       ]),
+      */
 
+      
       floatingActionButton: FloatingActionButton(
         onPressed: _incrementCounter,
         tooltip: 'Increment',
