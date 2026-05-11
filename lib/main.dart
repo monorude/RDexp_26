@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:sqflite/sqflite.dart';
+
 
 import 'setting_page.dart';
 
@@ -143,7 +145,7 @@ class _MyHomePageState extends State<MyHomePage> {
             height: 24,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
-              color: Colors.blue),
+              color: Colors.white),
             child: ClockTimer(),
           ),
         ),
