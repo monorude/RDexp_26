@@ -125,7 +125,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             ListTile(
               leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
+              title: const Text('hoges'),
               onTap: () {
                 Navigator.push(
                   context,
