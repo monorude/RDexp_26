@@ -13,6 +13,7 @@ import 'setting_page.dart';
 void main() {
   initializeDateFormatting('ja');
   runApp(const MyApp());
+  await Hive.initFlutter();
 }//メイン関数。起動要求がくるとこれが動く。
  //やっていることは、init~で日付のフォーマットを日本語にし、runAppでMyAppクラスを動かしている。
 
@@ -88,6 +89,9 @@ class _MyHomePageState extends State<MyHomePage> {
     return DateFormat.yMMMMEEEEd('ja').format(DateTime.now()).toString();
   }
 
+
+late Box box;
+box = await Hive.openBox('box1');
 
 //以下のwidget関数が、アプリの表示などを司っている。
 //Scaffold()はそれを記述する箱のようなもの？
