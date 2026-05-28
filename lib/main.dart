@@ -78,15 +78,12 @@ class _ClockTimerState extends State<ClockTimer> {
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
 
-  // 時間割データ（毎週固定）
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
   late List<List<String>> timetable;
 
-  // カレンダーで今どの日付（曜日）がタップされたかを覚えておく変数
   DateTime? _selectedDay;
 
-  // 日付ごとの予定・課題を保存する辞書（Map）
   Map<String, List<String>> assignments = {};
 
   @override
@@ -98,7 +95,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // 時間割の行をタップしたときに、予定を入力するダイアログを表示する関数
   void _editAssignment(String dateKey, int periodIndex, String subjectName) {
     String currentAssignment = '';
     if (assignments.containsKey(dateKey)) {
@@ -170,7 +166,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     final List<Widget> _tabs = [
-      // [0番目のタブ]: ホーム画面（カレンダー + その日の時間割）
       Column(
         children: [
           Center(
@@ -185,7 +180,6 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
 
-          // 🛠 カレンダーの Expanded を外し、自然なサイズで収まるようにしました
           TableCalendarSample(
             onDayTapped: (selectedDay) {
               setState(() {
@@ -195,7 +189,6 @@ class _MyHomePageState extends State<MyHomePage> {
             assignments: assignments,
           ),
 
-          // 🛠 時間割エリアを Expanded と SingleChildScrollView で包み、スクロール可能にしました
           Expanded(
             child: SingleChildScrollView(
               child: Container(
@@ -314,7 +307,6 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
 
-      // [1番目のタブ]: 時間割設定画面
       TimetableScreen(
         timetable: timetable,
         onTimetableChanged: (updatedTimetable) {
