@@ -1,34 +1,27 @@
 import 'package:flutter/material.dart';
 
 class TimetableScreen extends StatefulWidget {
-  const TimetableScreen({super.key});
+  // 親からデータと通知関数を受け取るための引数を定義
+  const TimetableScreen({
+    super.key,
+    required this.timetable,
+    required this.onTimetableChanged,
+  });
+
+  final List<List<String>> timetable;
+  final ValueChanged<List<List<String>>> onTimetableChanged;
 
   @override
   State<TimetableScreen> createState() => _TimetableScreenState();
 }
 
 class _TimetableScreenState extends State<TimetableScreen> {
-  // 曜日と時限の定義
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
 
-  // 時間割のデータを保持する二次元配列
-  late List<List<String>> timetable;
-
-  @override
-  void initState() {
-    super.initState(); // ← 【修正①】タイポを直しました
-    // 初期状態はすべて空文字で初期化
-    timetable = List.generate(
-      periods.length,
-      (_) => List.generate(days.length, (_) => ''),
-    );
-  }
-
-  // 科目を入力・編集するダイアログを表示する関数
   void _editSubject(int periodIndex, int dayIndex) {
     final textController = TextEditingController(
-      text: timetable[periodIndex][dayIndex],
+      text: widget.timetable[periodIndex][dayIndex],
     );
 
     showDialog(
@@ -48,9 +41,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                setState(() {
-                  timetable[periodIndex][dayIndex] = textController.text;
-                });
+                List<List<String>> newTimetable = List.from(widget.timetable);
+                newTimetable[periodIndex][dayIndex] = textController.text;
+
+                // 親に「変更されたデータ」を報告
+                widget.onTimetableChanged(newTimetable);
+
                 Navigator.pop(context);
               },
               child: const Text('保存'),
@@ -82,9 +78,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
               5: FlexColumnWidth(2.0),
             },
             children: [
-              // 1行目：ヘッダー（曜日）
               TableRow(
-                // ↓ 【修正②】backgroundColor から decoration に変更しました
                 decoration: BoxDecoration(color: Colors.grey.shade100),
                 children: [
                   const TableCell(
@@ -110,7 +104,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
                   ),
                 ],
               ),
-              // 2行目以降：各時限のデータ
               ...List.generate(periods.length, (periodIndex) {
                 return TableRow(
                   children: [
@@ -128,7 +121,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                       ),
                     ),
                     ...List.generate(days.length, (dayIndex) {
-                      final subject = timetable[periodIndex][dayIndex];
+                      final subject = widget.timetable[periodIndex][dayIndex];
                       return TableCell(
                         child: GestureDetector(
                           onTap: () => _editSubject(periodIndex, dayIndex),
