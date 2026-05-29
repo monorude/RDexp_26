@@ -1,20 +1,17 @@
 import 'dart:async';
-
+import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-
 import 'setting_page.dart';
-
 
 void main() {
   initializeDateFormatting('ja');
   runApp(const MyApp());
-}//メイン関数。起動要求がくるとこれが動く。
- //やっていることは、init~で日付のフォーマットを日本語にし、runAppでMyAppクラスを動かしている。
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -24,12 +21,12 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Home',
       theme: ThemeData(
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       home: const MyHomePage(title: 'hoge'),
     );
   }
-}//Myappクラス。多分アプリ全体のテーマとかを決めるクラス。MyHomepageにタイトルを渡して起動？
+}
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
@@ -38,81 +35,302 @@ class MyHomePage extends StatefulWidget {
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
-}//MyHomePageクラス。MyAppから受け取ったtitleを……どうしてるんですかね。これは。
+}
 
-class ClockTimer extends StatefulWidget{
+class ClockTimer extends StatefulWidget {
   @override
   State<ClockTimer> createState() {
     return _ClockTimerState();
   }
-}//毎秒更新用タイマーの起動用クラス State<ClockTimer>の抽象クラス？
+}
 
 class _ClockTimerState extends State<ClockTimer> {
   String _time = '';
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    Timer.periodic(const Duration(seconds: 1), _onTimer);
+    _timer = Timer.periodic(const Duration(seconds: 1), _onTimer);
   }
+
   void _onTimer(Timer timer) {
+    if (!mounted) return;
+
     var now = DateTime.now();
     var date = DateFormat.Hms('ja').format(now).toString();
     var timeString = DateFormat.yMMMMEEEEd('ja').format(now).toString();
-    setState(() => 
-      _time = '$timeString $date ',
-    );
+    setState(() => _time = '$timeString $date ');
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      _time,
-    );
+    return Text(_time);
   }
-}//毎秒更新用タイマーの本体。
- //https://zenn.dev/lisras/articles/d5b21d89ab4fa2 を参照。
-
-
+}
 
 class _MyHomePageState extends State<MyHomePage> {
+  int _currentIndex = 0;
+
+  final List<String> days = ['月', '火', '水', '木', '金'];
+  final List<String> periods = ['1', '2', '3', '4', '5'];
+  late List<List<String>> timetable;
+
+  DateTime? _selectedDay;
+
+  Map<String, List<String>> assignments = {};
+
+  @override
+  void initState() {
+    super.initState();
+    timetable = List.generate(
+      periods.length,
+      (_) => List.generate(days.length, (_) => ''),
+    );
+  }
+
+  void _editAssignment(String dateKey, int periodIndex, String subjectName) {
+    String currentAssignment = '';
+    if (assignments.containsKey(dateKey)) {
+      currentAssignment = assignments[dateKey]![periodIndex];
+    }
+
+    final textController = TextEditingController(text: currentAssignment);
+    final displaySubject = subjectName.isEmpty ? '空きコマ' : subjectName;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('$displaySubject (${periods[periodIndex]}限) の予定・課題'),
+          content: TextField(
+            controller: textController,
+            decoration: const InputDecoration(
+              hintText: '課題、テスト、持ち物などを入力',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  if (!assignments.containsKey(dateKey)) {
+                    assignments[dateKey] = List.generate(
+                      periods.length,
+                      (_) => '',
+                    );
+                  }
+                  assignments[dateKey]![periodIndex] = textController.text;
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   void _incrementCounter() {
-    setState(() {
-    });
+    setState(() {});
   }
 
   String getTodayDate() {
     initializeDateFormatting('ja');
-
     return DateFormat.yMMMMEEEEd('ja').format(DateTime.now()).toString();
   }
 
-
-//以下のwidget関数が、アプリの表示などを司っている。
-//Scaffold()はそれを記述する箱のようなもの？
-//要素の追加は、body:内にchild:として記述していくこととなる。
   @override
   Widget build(BuildContext context) {
+    int? selectedDayIndex;
+    String dateKey = '';
+
+    if (_selectedDay != null) {
+      int weekdayIndex = _selectedDay!.weekday - 1;
+      if (weekdayIndex < 5) {
+        selectedDayIndex = weekdayIndex;
+      }
+      dateKey = DateFormat('yyyy-MM-dd').format(_selectedDay!);
+    }
+
+    final List<Widget> _tabs = [
+      Column(
+        children: [
+          Center(
+            child: Container(
+              width: 288,
+              height: 24,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: Colors.white,
+              ),
+              child: ClockTimer(),
+            ),
+          ),
+
+          TableCalendarSample(
+            onDayTapped: (selectedDay) {
+              setState(() {
+                _selectedDay = selectedDay;
+              });
+            },
+            assignments: assignments,
+          ),
+
+          Expanded(
+            child: SingleChildScrollView(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  border: Border(top: BorderSide(color: Colors.grey.shade300)),
+                ),
+                child: selectedDayIndex == null
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            'カレンダーの日付（月〜金）をタップすると\nここにその日の時間割が表示されます',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '📅 ${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueAccent,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...List.generate(periods.length, (periodIndex) {
+                            final subject =
+                                timetable[periodIndex][selectedDayIndex!];
+                            final assignment =
+                                (assignments.containsKey(dateKey))
+                                ? assignments[dateKey]![periodIndex]
+                                : '';
+
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                _editAssignment(dateKey, periodIndex, subject);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 6.0,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 50,
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          '${periods[periodIndex]}限',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            subject.isEmpty
+                                                ? '（空きコマ）'
+                                                : subject,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: subject.isEmpty
+                                                  ? Colors.grey
+                                                  : Colors.black87,
+                                              fontWeight: subject.isEmpty
+                                                  ? FontWeight.normal
+                                                  : FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (assignment.isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '📌 予定: $assignment',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.redAccent,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      size: 16,
+                                      color: Colors.grey,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      TimetableScreen(
+        timetable: timetable,
+        onTimetableChanged: (updatedTimetable) {
+          setState(() {
+            timetable = updatedTimetable;
+          });
+        },
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
+        title: Text(_currentIndex == 0 ? widget.title : '時間割設定'),
       ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
             const DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-              ),
+              decoration: BoxDecoration(color: Colors.blue),
               child: Text(
                 'aaa',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                ),
+                style: TextStyle(color: Colors.white, fontSize: 24),
               ),
             ),
             const ListTile(
@@ -137,29 +355,30 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
 
+      body: IndexedStack(index: _currentIndex, children: _tabs),
 
-      body: Column(children: [
-        Center(
-          child: Container(
-            width: 288,
-            height: 24,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              color: Colors.white),
-            child: ClockTimer(),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton(
+              onPressed: _incrementCounter,
+              tooltip: 'Increment',
+              child: const Icon(Icons.add),
+            )
+          : null,
+
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_month),
+            label: 'ホーム',
           ),
-        ),
-
-      
-        Expanded(
-          child:TableCalendarSample(),
-        ),
-      ],
-    ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          BottomNavigationBarItem(icon: Icon(Icons.table_chart), label: '時間割'),
+        ],
       ),
     );
   }
