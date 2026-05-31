@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -77,6 +78,7 @@ class _ClockTimerState extends State<ClockTimer> {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
+  bool _isFabExpanded = false;
 
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
@@ -143,8 +145,20 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  void _incrementCounter() {
-    setState(() {});
+  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        elevation: 6,
+      ),
+      child: Text(label),
+    );
   }
 
   String getTodayDate() {
@@ -212,7 +226,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '📅 ${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
+                            '${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
+                            //(textに絵文字を含めると表示が崩れるため修正 dev-mono-4)
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -278,7 +293,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                           if (assignment.isNotEmpty) ...[
                                             const SizedBox(height: 2),
                                             Text(
-                                              '📌 予定: $assignment',
+                                              '予定: $assignment',
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 color: Colors.redAccent,
@@ -355,13 +370,51 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
 
-      body: IndexedStack(index: _currentIndex, children: _tabs),
+      body: Stack(
+        children: [
+          IndexedStack(index: _currentIndex, children: _tabs),
+          if (_isFabExpanded) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isFabExpanded = false),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.25),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildFabMenuItem('繰り返し予定を追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('予定を追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('タスクを追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
 
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: _incrementCounter,
-              tooltip: 'Increment',
-              child: const Icon(Icons.add),
+              onPressed: () =>
+                  setState(() => _isFabExpanded = !_isFabExpanded),
+              tooltip: 'メニューを開く',
+              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
             )
           : null,
 
@@ -370,6 +423,7 @@ class _MyHomePageState extends State<MyHomePage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
+            _isFabExpanded = false;
           });
         },
         items: const [
