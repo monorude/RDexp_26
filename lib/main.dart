@@ -27,9 +27,9 @@ WidgetsFlutterBinding.ensureInitialized();
   // 通知初期化
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const initSettings = InitializationSettings(android: android);
+  const ios = DarwinInitializationSettings();
+  const initSettings = InitializationSettings(android: android, iOS: ios);
   await flutterLocalNotificationsPlugin.initialize(initSettings);
-
 
   initializeDateFormatting('ja');
   runApp(const MyApp());
