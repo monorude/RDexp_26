@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'setting_page.dart';
+import 'add_event_screen.dart';
 
 void main() {
   initializeDateFormatting('ja');
@@ -397,6 +398,12 @@ class _MyHomePageState extends State<MyHomePage> {
                   const SizedBox(height: 12),
                   _buildFabMenuItem('予定を追加する', () {
                     setState(() => _isFabExpanded = false);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AddEventScreen(),
+                      ),
+                    );
                   }),
                   const SizedBox(height: 12),
                   _buildFabMenuItem('タスクを追加する', () {

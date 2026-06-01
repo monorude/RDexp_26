@@ -12,7 +12,6 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return NormalTask(
-      id: fields[0] as String,
       title: fields[1] as String,
       description: fields[2] as String,
       dueDate: fields[3] as DateTime,
@@ -25,20 +24,18 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
   @override
   void write(BinaryWriter writer, NormalTask obj) {
     writer
-      ..writeByte(7) // フィールド数
+      ..writeByte(6) // フィールド数
       ..writeByte(0)
-      ..write(obj.id)
-      ..writeByte(1)
       ..write(obj.title)
-      ..writeByte(2)
+      ..writeByte(1)
       ..write(obj.description)
-      ..writeByte(3)
+      ..writeByte(2)
       ..write(obj.dueDate)
-      ..writeByte(4)
+      ..writeByte(3)
       ..write(obj.isCompleted)
-      ..writeByte(5)
+      ..writeByte(4)
       ..write(obj.tag)
-      ..writeByte(6)
+      ..writeByte(5)
       ..write(obj.collegeTime);
   }
 
