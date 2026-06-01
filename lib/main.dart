@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'setting_page.dart';
+import 'add_event_screen.dart';
 
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -97,6 +99,7 @@ class _ClockTimerState extends State<ClockTimer> {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
+  bool _isFabExpanded = false;
 
 
 int _notificationId = 0;
@@ -250,8 +253,20 @@ Future<void> scheduleNotification({
     );
   }
 
-  void _incrementCounter() {
-    setState(() {});
+  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        elevation: 6,
+      ),
+      child: Text(label),
+    );
   }
 
   String getTodayDate() {
@@ -319,7 +334,8 @@ Future<void> scheduleNotification({
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '📅 ${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
+                            '${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
+                            //(textに絵文字を含めると表示が崩れるため修正 dev-mono-4)
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -385,7 +401,7 @@ Future<void> scheduleNotification({
                                           if (assignment.isNotEmpty) ...[
                                             const SizedBox(height: 2),
                                             Text(
-                                              '📌 予定: $assignment',
+                                              '予定: $assignment',
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 color: Colors.redAccent,
@@ -462,13 +478,57 @@ Future<void> scheduleNotification({
         ),
       ),
 
-      body: IndexedStack(index: _currentIndex, children: _tabs),
+      body: Stack(
+        children: [
+          IndexedStack(index: _currentIndex, children: _tabs),
+          if (_isFabExpanded) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isFabExpanded = false),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.25),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildFabMenuItem('繰り返し予定を追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('予定を追加する', () {
+                    setState(() => _isFabExpanded = false);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AddEventScreen(),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('タスクを追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
 
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: _incrementCounter,
-              tooltip: 'Increment',
-              child: const Icon(Icons.add),
+              onPressed: () =>
+                  setState(() => _isFabExpanded = !_isFabExpanded),
+              tooltip: 'メニューを開く',
+              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
             )
           : null,
 
@@ -477,6 +537,7 @@ Future<void> scheduleNotification({
         onTap: (index) {
           setState(() {
             _currentIndex = index;
+            _isFabExpanded = false;
           });
         },
         items: const [

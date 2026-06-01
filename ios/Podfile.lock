@@ -1,22 +1,28 @@
 PODS:
   - Flutter (1.0.0)
-  - sqflite_darwin (0.0.4):
+  - flutter_localization (0.0.1):
+    - Flutter
+  - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - flutter_localization (from `.symlinks/plugins/flutter_localization/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  sqflite_darwin:
-    :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  flutter_localization:
+    :path: ".symlinks/plugins/flutter_localization/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  flutter_localization: 4cfbf7b88962629bf7afc93156a271be80696f97
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 
