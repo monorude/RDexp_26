@@ -8,7 +8,27 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'setting_page.dart';
 
-void main() {
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+void main()async {
+
+WidgetsFlutterBinding.ensureInitialized();
+
+  await Hive.initFlutter();
+  await Hive.openBox('tasks'); // ← 課題保存用 Box
+
+  // タイムゾーン初期化
+  tz.initializeTimeZones();
+
+  // 通知初期化
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const initSettings = InitializationSettings(android: android);
+  await flutterLocalNotificationsPlugin.initialize(initSettings);
+
+
   initializeDateFormatting('ja');
   runApp(const MyApp());
 }
@@ -78,6 +98,41 @@ class _ClockTimerState extends State<ClockTimer> {
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
 
+
+int _notificationId = 0;
+
+Future<void> scheduleNotification({
+  required DateTime dateTime,
+  required String title,
+  required String body,
+}) async {
+  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  _notificationId++; // ← ここでIDを増やす
+
+  await flutterLocalNotificationsPlugin.zonedSchedule(
+    _notificationId, // ← 毎回違うIDになる
+    title,
+    body,
+    tz.TZDateTime.from(dateTime, tz.local),
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'schedule_channel',
+        'Scheduled Notifications',
+        importance: Importance.max,
+        priority: Priority.high,
+      ),
+    ),
+    androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    uiLocalNotificationDateInterpretation:
+        UILocalNotificationDateInterpretation.absoluteTime,
+  );
+}
+
+
+
+
+
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
   late List<List<String>> timetable;
@@ -93,9 +148,18 @@ class _MyHomePageState extends State<MyHomePage> {
       periods.length,
       (_) => List.generate(days.length, (_) => ''),
     );
+    // 🔥 Hive から assignments を読み込む
+    final box = Hive.box('tasks');
+
+    for (var key in box.keys) {
+      assignments[key] = List<String>.from(box.get(key));
+    }
+
   }
 
   void _editAssignment(String dateKey, int periodIndex, String subjectName) {
+    TimeOfDay? selectedTime;
+    
     String currentAssignment = '';
     if (assignments.containsKey(dateKey)) {
       currentAssignment = assignments[dateKey]![periodIndex];
@@ -109,21 +173,42 @@ class _MyHomePageState extends State<MyHomePage> {
       builder: (context) {
         return AlertDialog(
           title: Text('$displaySubject (${periods[periodIndex]}限) の予定・課題'),
-          content: TextField(
-            controller: textController,
-            decoration: const InputDecoration(
-              hintText: '課題、テスト、持ち物などを入力',
-              border: OutlineInputBorder(),
-            ),
-            autofocus: true,
-          ),
+          content: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    TextField(
+      controller: textController,
+      decoration: const InputDecoration(
+        hintText: '課題、テスト、持ち物などを入力',
+        border: OutlineInputBorder(),
+      ),
+      autofocus: true,
+    ),
+    const SizedBox(height: 12),
+
+    // 🔔 通知時刻を選ぶボタン
+    ElevatedButton(
+      onPressed: () async {
+        final time = await showTimePicker(
+          context: context,
+          initialTime: TimeOfDay.now(),
+        );
+        if (time != null) {
+          selectedTime = time;
+        }
+      },
+      child: const Text('通知時刻を選択'),
+    ),
+  ],
+),
+
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('キャンセル'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: ()async {
                 setState(() {
                   if (!assignments.containsKey(dateKey)) {
                     assignments[dateKey] = List.generate(
@@ -133,6 +218,28 @@ class _MyHomePageState extends State<MyHomePage> {
                   }
                   assignments[dateKey]![periodIndex] = textController.text;
                 });
+
+                // 🔥 Hive に保存
+                final box = Hive.box('tasks');
+                await box.put(dateKey, assignments[dateKey]);
+
+                if (selectedTime != null) {
+                  final date = _selectedDay ?? DateTime.now();
+                  final notifyDate = DateTime(
+                    date.year,
+                    date.month,
+                    date.day,
+                    selectedTime!.hour,
+                    selectedTime!.minute,
+                  );
+
+                  scheduleNotification(
+                  dateTime: notifyDate,
+                  title: '📌 ${subjectName.isEmpty ? "空きコマ" : subjectName}',
+                  body: textController.text,
+                  );
+                }
+
                 Navigator.pop(context);
               },
               child: const Text('保存'),
