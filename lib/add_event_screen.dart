@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'NormalTask.dart';
 
 /// NormalTask モデルに基づいて予定情報を入力・登録するための画面
 class AddEventScreen extends StatefulWidget {
   const AddEventScreen({super.key});
-
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
 }
@@ -53,6 +53,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
+      
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
