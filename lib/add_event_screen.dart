@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'NormalTask.dart';
 
 /// NormalTask モデルに基づいて予定情報を入力・登録するための画面
@@ -53,7 +52,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
-      
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
@@ -101,6 +99,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
+  // 🌟 手動で時刻が入力された場合、どの時限のコマに割り振るかを自動判定するヘルパー関数
+  int _determinePeriod(TimeOfDay? time) {
+    if (time == null) return 1; // 未選択ならデフォルト1限
+    final minutes = time.hour * 60 + time.minute;
+
+    if (minutes >= 17 * 60 + 15) return 5; // 17:15以降は5限
+    if (minutes >= 15 * 60 + 30) return 4; // 15:30以降は4限
+    if (minutes >= 13 * 60 + 45) return 3; // 13:45以降は3限
+    if (minutes >= 11 * 60 + 5) return 2; // 11:05以降は2限
+    return 1; // それ以前は1限
+  }
+
   // タグ作成ダイアログを表示し、入力されたタグをリストに追加する
   void _showCreateTagDialog() {
     final tagController = TextEditingController();
@@ -126,7 +136,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
               final tagName = tagController.text.trim();
               if (tagName.isNotEmpty && !_availableTags.contains(tagName)) {
                 setState(() {
-                  // タグの永続化処理（Hive Box などへの書き込み）はここに記述する
                   _availableTags.add(tagName);
                   _selectedTag = tagName;
                 });
@@ -147,8 +156,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
     }
     if (_titleController.text.contains(RegExp(r'[\\/:*?"<>|]')) ||
         _descriptionController.text.contains(RegExp(r'[\\/:*?"<>|]'))) {
-      return '使用できない文字が含まれています'
-;    }
+      return '使用できない文字が含まれています';
+    }
     if (_selectedDate == null) {
       return '開始日を選択してください';
     }
@@ -159,9 +168,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
   void _onSubmit() {
     final error = _validate();
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
 
@@ -175,8 +184,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
       effectiveTime.minute,
     );
 
-    // 入力内容を NormalTask に整形する（isCompleted は登録時常に false）
-    // ignore: unused_local_variable
+    // 入力内容を NormalTask に整形する
     final task = NormalTask(
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
@@ -186,9 +194,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
       collegeTime: _selectedPeriod ?? 0,
     );
 
-    // タスクの保存処理（Hive Box などへの書き込み）はここに記述する
+    // 🌟 時限（1〜5）を確定させ、0から始まるインデックス（0〜4）に変換する
+    final periodIndex = _selectedPeriod != null ? _selectedPeriod! - 1 : -1;
 
-    Navigator.pop(context);
+    // 🌟 データを Map に詰めて、Navigator.pop で main.dart に返却する
+    Navigator.pop(context, {
+      'text': _titleController.text.trim(),
+      'periodIndex': periodIndex,
+      'time': _selectedTime,
+      'date': _selectedDate,
+    });
   }
 
   // TimeOfDay を "HH:MM" 形式の文字列に変換する
@@ -208,23 +223,17 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 手動で時刻が入力されている間は時限ドロップダウンを無効化する
     final bool isPeriodDisabled = _isManualTime;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('予定を追加'),
-      ),
+      appBar: AppBar(title: const Text('予定を追加')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // タイトル入力
-            const Text(
-              'タイトル',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('タイトル', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             TextField(
               controller: _titleController,
@@ -236,10 +245,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             const SizedBox(height: 20),
 
             // 説明入力
-            const Text(
-              '説明',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('説明', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             TextField(
               controller: _descriptionController,
@@ -253,27 +259,21 @@ class _AddEventScreenState extends State<AddEventScreen> {
             const SizedBox(height: 20),
 
             // 開始日選択
-            const Text(
-              '開始日',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('開始日', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             OutlinedButton.icon(
               onPressed: _pickDate,
               icon: const Icon(Icons.calendar_today, size: 18),
               label: Text(
-                _selectedDate != null
-                    ? _formatDate(_selectedDate!)
-                    : '日付を選択',
+                _selectedDate != null ? _formatDate(_selectedDate!) : '日付を選択',
               ),
             ),
             const SizedBox(height: 20),
 
-            // 開始時刻と時限（互いに排他的な入力方式）
+            // 開始時刻と時限
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 開始時刻の手動入力
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -294,7 +294,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                                   : '未選択',
                             ),
                           ),
-                          // 手動入力時のみクリアボタンを表示する
                           if (_isManualTime) ...[
                             const SizedBox(width: 4),
                             IconButton(
@@ -318,7 +317,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 ),
                 const SizedBox(width: 16),
 
-                // 時限選択ドロップダウン（手動時刻入力中は無効）
+                // 時限選択ドロップダウン
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,10 +357,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             const SizedBox(height: 20),
 
             // タグ管理フォーム
-            const Text(
-              'タグ',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('タグ', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -371,7 +367,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
               ),
               child: Row(
                 children: [
-                  // 既存タグの横スクロール表示・選択エリア
                   Expanded(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -397,11 +392,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
                                   child: FilterChip(
                                     label: Text(tag),
                                     selected: isSelected,
-                                    // タップでタグを選択・再タップで選択解除する
                                     onSelected: (_) {
                                       setState(() {
-                                        _selectedTag =
-                                            isSelected ? null : tag;
+                                        _selectedTag = isSelected ? null : tag;
                                       });
                                     },
                                   ),
@@ -411,7 +404,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // 新規タグ作成ボタン
                   OutlinedButton(
                     onPressed: _showCreateTagDialog,
                     child: const Text('作成'),
@@ -421,7 +413,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             ),
             const SizedBox(height: 32),
 
-            // 登録ボタン（検証に失敗した場合はスナックバーでエラーを表示する）
+            // 登録ボタン
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -429,10 +421,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text(
-                  '登録',
-                  style: TextStyle(fontSize: 16),
-                ),
+                child: const Text('登録', style: TextStyle(fontSize: 16)),
               ),
             ),
           ],
