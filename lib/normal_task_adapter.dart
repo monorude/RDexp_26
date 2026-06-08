@@ -12,12 +12,12 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return NormalTask(
-      title: fields[1] as String,
-      description: fields[2] as String,
-      dueDate: fields[3] as DateTime,
-      isCompleted: fields[4] as bool,
-      tag: fields[5] as String,
-      collegeTime: fields[6] as int,
+      title: fields[0] as String,
+      description: fields[1] as String,
+      dueDate: fields[2] as DateTime,
+      isCompleted: fields[3] as bool,
+      tag: fields[4] as String,
+      collegeTime: fields[5] as int,
     );
   }
 
