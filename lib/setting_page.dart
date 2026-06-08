@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'period_time_store.dart';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -8,9 +9,9 @@ class SettingPage extends StatefulWidget {
 }
 
 class _SettingPageState extends State<SettingPage> {
-  static const int _periodCount = 6;
+  static const int _periodCount = PeriodTimeStore.periodCount;
 
-  final List<TimeOfDay?> _periodStartTimes = List.filled(_periodCount, null);
+  late List<TimeOfDay> _periodStartTimes;
 
   bool _autoDeleteEnabled = false;
   String _autoDeleteDuration = '1ヶ月';
@@ -23,13 +24,22 @@ class _SettingPageState extends State<SettingPage> {
     '2年',
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _periodStartTimes = List.generate(
+      _periodCount,
+      (i) => PeriodTimeStore.getTime(i + 1),
+    );
+  }
+
   Future<void> _pickTime(int periodIndex) async {
-    final initial = _periodStartTimes[periodIndex] ?? const TimeOfDay(hour: 9, minute: 0);
     final picked = await showTimePicker(
       context: context,
-      initialTime: initial,
+      initialTime: _periodStartTimes[periodIndex],
     );
     if (picked != null) {
+      await PeriodTimeStore.setTime(periodIndex + 1, picked);
       setState(() {
         _periodStartTimes[periodIndex] = picked;
       });
@@ -73,12 +83,26 @@ class _SettingPageState extends State<SettingPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
         children: [
-          _SectionHeader(title: '授業開始時間の設定'),
-          ...List.generate(_periodCount, (i) => _PeriodTimeTile(
-            period: i + 1,
-            time: _periodStartTimes[i],
-            onTap: () => _pickTime(i),
-          )),
+          // 授業開始時間の設定（折りたたみ、初期状態は閉じた状態）
+          ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+            initiallyExpanded: false,
+            title: Text(
+              '授業開始時間の設定',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            children: List.generate(
+              _periodCount,
+              (i) => _PeriodTimeTile(
+                period: i + 1,
+                time: _periodStartTimes[i],
+                onTap: () => _pickTime(i),
+              ),
+            ),
+          ),
           const Divider(height: 32),
           _SectionHeader(title: '完了済みタスクの自動削除'),
           SwitchListTile(
@@ -162,24 +186,19 @@ class _PeriodTimeTile extends StatelessWidget {
   });
 
   final int period;
-  final TimeOfDay? time;
+  final TimeOfDay time;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final label = time != null ? time!.format(context) : '未設定';
     return ListTile(
       title: Text('$period 時限'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: time != null
-                      ? Theme.of(context).colorScheme.onSurface
-                      : Theme.of(context).colorScheme.outline,
-                ),
+            time.format(context),
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(width: 8),
           IconButton(
