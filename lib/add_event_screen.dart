@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'NormalTask.dart';
+import 'period_time_store.dart';
 
 /// NormalTask モデルに基づいて予定情報を入力・登録するための画面
 class AddEventScreen extends StatefulWidget {
@@ -35,19 +35,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // タグ一覧の読み込み処理（Hive Box などからの取得）はここに記述する
   final List<String> _availableTags = [];
 
-  // 時限ごとの授業開始時刻の対応表
-  static const Map<int, TimeOfDay> _periodTimeMap = {
-    1: TimeOfDay(hour: 9, minute: 0),
-    2: TimeOfDay(hour: 11, minute: 5),
-    3: TimeOfDay(hour: 13, minute: 45),
-    4: TimeOfDay(hour: 15, minute: 30),
-    5: TimeOfDay(hour: 17, minute: 15),
-  };
+  // 時限ごとの授業開始時刻（PeriodTimeStore から initState で読み込む）
+  late Map<int, TimeOfDay> _periodTimes;
 
   @override
   void initState() {
     super.initState();
     _box = Hive.box<NormalTask>('normalTasks');
+    _periodTimes = {
+      for (var i = 1; i <= 5; i++) i: PeriodTimeStore.getTime(i),
+    };
   }
 
   @override
@@ -100,7 +97,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     setState(() {
       _selectedPeriod = period;
       if (period != null) {
-        _selectedTime = _periodTimeMap[period];
+        _selectedTime = _periodTimes[period];
         _isManualTime = false;
       } else {
         // 未選択に戻した場合は時刻もクリアする
@@ -208,7 +205,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
     await _box.add(task);
 
     if (!mounted) return;
-    Navigator.pop(context);
     // 🌟 時限（1〜5）を確定させ、0から始まるインデックス（0〜4）に変換する
     final periodIndex = _selectedPeriod != null ? _selectedPeriod! - 1 : -1;
 
