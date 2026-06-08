@@ -14,12 +14,11 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-void main()async {
-
-WidgetsFlutterBinding.ensureInitialized();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
   await Hive.initFlutter();
-  await Hive.openBox('tasks'); // ← 課題保存用 Box
+  await Hive.openBox('tasks'); // 課題・時間割保存用 Box
 
   // タイムゾーン初期化
   tz.initializeTimeZones();
@@ -48,15 +47,6 @@ class MyApp extends StatelessWidget {
       home: const MyHomePage(title: 'hoge'),
     );
   }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class ClockTimer extends StatefulWidget {
@@ -97,160 +87,292 @@ class _ClockTimerState extends State<ClockTimer> {
   }
 }
 
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key, required this.title});
+
+  final String title;
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
   bool _isFabExpanded = false;
+  int _notificationId = 0;
 
+  Future<void> scheduleNotification({
+    required DateTime dateTime,
+    required String title,
+    required String body,
+  }) async {
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    _notificationId++;
 
-int _notificationId = 0;
-
-Future<void> scheduleNotification({
-  required DateTime dateTime,
-  required String title,
-  required String body,
-}) async {
-  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-  _notificationId++; // ← ここでIDを増やす
-
-  await flutterLocalNotificationsPlugin.zonedSchedule(
-    _notificationId, // ← 毎回違うIDになる
-    title,
-    body,
-    tz.TZDateTime.from(dateTime, tz.local),
-    const NotificationDetails(
-      android: AndroidNotificationDetails(
-        'schedule_channel',
-        'Scheduled Notifications',
-        importance: Importance.max,
-        priority: Priority.high,
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      _notificationId,
+      title,
+      body,
+      tz.TZDateTime.from(dateTime, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'schedule_channel',
+          'Scheduled Notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
       ),
-    ),
-    androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-    uiLocalNotificationDateInterpretation:
-        UILocalNotificationDateInterpretation.absoluteTime,
-  );
-}
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
 
+  void _addNewAssignment(
+    String dateKey,
+    int? periodIndex,
+    String text,
+    TimeOfDay? time,
+    String subjectName,
+  ) async {
+    final box = Hive.box('tasks');
 
+    if (periodIndex != null && periodIndex != -1) {
+      setState(() {
+        if (!periodTasks.containsKey(dateKey)) {
+          periodTasks[dateKey] = [];
+        }
+        periodTasks[dateKey]!.add({
+          'text': text,
+          'isCompleted': false,
+          'periodIndex': periodIndex,
+        });
 
+        if (!assignments.containsKey(dateKey)) {
+          assignments[dateKey] = List.generate(periods.length, (_) => '');
+        }
+        assignments[dateKey]![periodIndex] = 'has_task';
+      });
+      await box.put('${dateKey}_period', periodTasks[dateKey]);
+      await box.put(dateKey, assignments[dateKey]);
+    } else {
+      final String timeStr = time != null
+          ? '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'
+          : '時刻未設定';
 
+      setState(() {
+        if (!plainTasks.containsKey(dateKey)) {
+          plainTasks[dateKey] = [];
+        }
+        plainTasks[dateKey]!.add({
+          'time': timeStr,
+          'text': text,
+          'isCompleted': false,
+        });
+      });
+      await box.put('${dateKey}_plain', plainTasks[dateKey]);
+    }
+
+    if (time != null) {
+      final DateTime parsedDate = DateTime.parse(dateKey);
+      final notifyDate = DateTime(
+        parsedDate.year,
+        parsedDate.month,
+        parsedDate.day,
+        time.hour,
+        time.minute,
+      );
+
+      if (notifyDate.isAfter(DateTime.now())) {
+        scheduleNotification(
+          dateTime: notifyDate,
+          title: (periodIndex != null && periodIndex != -1)
+              ? '📌 ${subjectName.isEmpty ? "空きコマ" : subjectName}'
+              : '📌 予定・タスク',
+          body: text,
+        );
+      } else {
+        print('【通知スキップ】設定された時刻（$notifyDate）が過去のため、通知は登録されませんでした。');
+      }
+    }
+  }
 
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
-  late List<List<String>> timetable;
+
+  // 前期と後期の時間割データ
+  late List<List<String>> timetable1;
+  late List<List<String>> timetable2;
+
+  // それぞれの時間割の期限（開始日・終了日）
+  DateTime? semester1Start;
+  DateTime? semester1End;
+  DateTime? semester2Start;
+  DateTime? semester2End;
 
   DateTime? _selectedDay;
-
   Map<String, List<String>> assignments = {};
+  Map<String, List<Map<String, dynamic>>> periodTasks = {};
+  Map<String, List<Map<String, dynamic>>> plainTasks = {};
+
+  // ✨【修正】戻り値を Nullable (List<List<String>>?) に変更し、期間外は null を返すように
+  List<List<String>>? _getTimetableForDate(DateTime date) {
+    final target = DateTime(date.year, date.month, date.day);
+
+    if (semester1Start != null && semester1End != null) {
+      final start = DateTime(
+        semester1Start!.year,
+        semester1Start!.month,
+        semester1Start!.day,
+      );
+      final end = DateTime(
+        semester1End!.year,
+        semester1End!.month,
+        semester1End!.day,
+      );
+      if ((target.isAfter(start) || target.isAtSameMomentAs(start)) &&
+          (target.isBefore(end) || target.isAtSameMomentAs(end))) {
+        return timetable1;
+      }
+    }
+
+    if (semester2Start != null && semester2End != null) {
+      final start = DateTime(
+        semester2Start!.year,
+        semester2Start!.month,
+        semester2Start!.day,
+      );
+      final end = DateTime(
+        semester2End!.year,
+        semester2End!.month,
+        semester2End!.day,
+      );
+      if ((target.isAfter(start) || target.isAtSameMomentAs(start)) &&
+          (target.isBefore(end) || target.isAtSameMomentAs(end))) {
+        return timetable2;
+      }
+    }
+
+    return null; // ✨ どちらの期間内でもない場合は null を返す
+  }
+
+  // 日付から所属する期の名前を取得する（UI表示用）
+  String _getSemesterNameForDate(DateTime date) {
+    final target = DateTime(date.year, date.month, date.day);
+
+    if (semester1Start != null && semester1End != null) {
+      final start = DateTime(
+        semester1Start!.year,
+        semester1Start!.month,
+        semester1Start!.day,
+      );
+      final end = DateTime(
+        semester1End!.year,
+        semester1End!.month,
+        semester1End!.day,
+      );
+      if ((target.isAfter(start) || target.isAtSameMomentAs(start)) &&
+          (target.isBefore(end) || target.isAtSameMomentAs(end))) {
+        return '前期';
+      }
+    }
+
+    if (semester2Start != null && semester2End != null) {
+      final start = DateTime(
+        semester2Start!.year,
+        semester2Start!.month,
+        semester2Start!.day,
+      );
+      final end = DateTime(
+        semester2End!.year,
+        semester2End!.month,
+        semester2End!.day,
+      );
+      if ((target.isAfter(start) || target.isAtSameMomentAs(start)) &&
+          (target.isBefore(end) || target.isAtSameMomentAs(end))) {
+        return '後期';
+      }
+    }
+
+    return '期間外'; // ✨ 文言をスッキリ「期間外」に変更
+  }
 
   @override
   void initState() {
     super.initState();
-    timetable = List.generate(
-      periods.length,
-      (_) => List.generate(days.length, (_) => ''),
-    );
-    // 🔥 Hive から assignments を読み込む
     final box = Hive.box('tasks');
 
+    // 前期・後期の時間割データをそれぞれHiveから読み込み
+    final savedTt1 = box.get('timetable1');
+    if (savedTt1 is List) {
+      timetable1 = savedTt1
+          .map((row) => List<String>.from(row as List))
+          .toList();
+    } else {
+      timetable1 = List.generate(
+        periods.length,
+        (_) => List.generate(days.length, (_) => ''),
+      );
+    }
+
+    final savedTt2 = box.get('timetable2');
+    if (savedTt2 is List) {
+      timetable2 = savedTt2
+          .map((row) => List<String>.from(row as List))
+          .toList();
+    } else {
+      timetable2 = List.generate(
+        periods.length,
+        (_) => List.generate(days.length, (_) => ''),
+      );
+    }
+
+    // 前期・後期の期限データを読み込み
+    final s1StartStr = box.get('sem1_start');
+    final s1EndStr = box.get('sem1_end');
+    if (s1StartStr != null) semester1Start = DateTime.parse(s1StartStr);
+    if (s1EndStr != null) semester1End = DateTime.parse(s1EndStr);
+
+    final s2StartStr = box.get('sem2_start');
+    final s2EndStr = box.get('sem2_end');
+    if (s2StartStr != null) semester2Start = DateTime.parse(s2StartStr);
+    if (s2EndStr != null) semester2End = DateTime.parse(s2EndStr);
+
+    // タスクデータの読み込み
     for (var key in box.keys) {
-      assignments[key] = List<String>.from(box.get(key));
-    }
-
-  }
-
-  void _editAssignment(String dateKey, int periodIndex, String subjectName) {
-    TimeOfDay? selectedTime;
-    
-    String currentAssignment = '';
-    if (assignments.containsKey(dateKey)) {
-      currentAssignment = assignments[dateKey]![periodIndex];
-    }
-
-    final textController = TextEditingController(text: currentAssignment);
-    final displaySubject = subjectName.isEmpty ? '空きコマ' : subjectName;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('$displaySubject (${periods[periodIndex]}限) の予定・課題'),
-          content: Column(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-    TextField(
-      controller: textController,
-      decoration: const InputDecoration(
-        hintText: '課題、テスト、持ち物などを入力',
-        border: OutlineInputBorder(),
-      ),
-      autofocus: true,
-    ),
-    const SizedBox(height: 12),
-
-    // 🔔 通知時刻を選ぶボタン
-    ElevatedButton(
-      onPressed: () async {
-        final time = await showTimePicker(
-          context: context,
-          initialTime: TimeOfDay.now(),
-        );
-        if (time != null) {
-          selectedTime = time;
+      if (key is String) {
+        if (key.endsWith('_plain')) {
+          final dateKey = key.replaceAll('_plain', '');
+          final dynamic savedData = box.get(key);
+          if (savedData is List) {
+            plainTasks[dateKey] = savedData
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
+          }
+        } else if (key.endsWith('_period')) {
+          final dateKey = key.replaceAll('_period', '');
+          final dynamic savedData = box.get(key);
+          if (savedData is List) {
+            periodTasks[dateKey] = savedData
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
+          }
         }
-      },
-      child: const Text('通知時刻を選択'),
-    ),
-  ],
-),
+      }
+    }
 
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('キャンセル'),
-            ),
-            ElevatedButton(
-              onPressed: ()async {
-                setState(() {
-                  if (!assignments.containsKey(dateKey)) {
-                    assignments[dateKey] = List.generate(
-                      periods.length,
-                      (_) => '',
-                    );
-                  }
-                  assignments[dateKey]![periodIndex] = textController.text;
-                });
-
-                // 🔥 Hive に保存
-                final box = Hive.box('tasks');
-                await box.put(dateKey, assignments[dateKey]);
-
-                if (selectedTime != null) {
-                  final date = _selectedDay ?? DateTime.now();
-                  final notifyDate = DateTime(
-                    date.year,
-                    date.month,
-                    date.day,
-                    selectedTime!.hour,
-                    selectedTime!.minute,
-                  );
-
-                  scheduleNotification(
-                  dateTime: notifyDate,
-                  title: '📌 ${subjectName.isEmpty ? "空きコマ" : subjectName}',
-                  body: textController.text,
-                  );
-                }
-
-                Navigator.pop(context);
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
-    );
+    // カレンダーマーカーの同期
+    periodTasks.forEach((dateKey, tasks) {
+      if (!assignments.containsKey(dateKey)) {
+        assignments[dateKey] = List.generate(periods.length, (_) => '');
+      }
+      for (var task in tasks) {
+        int pIdx = task['periodIndex'] as int? ?? -1;
+        if (pIdx >= 0 && pIdx < periods.length) {
+          assignments[dateKey]![pIdx] = 'has_task';
+        }
+      }
+    });
   }
 
   Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
@@ -260,18 +382,11 @@ Future<void> scheduleNotification({
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         elevation: 6,
       ),
       child: Text(label),
     );
-  }
-
-  String getTodayDate() {
-    initializeDateFormatting('ja');
-    return DateFormat.yMMMMEEEEd('ja').format(DateTime.now()).toString();
   }
 
   @override
@@ -288,6 +403,7 @@ Future<void> scheduleNotification({
     }
 
     final List<Widget> _tabs = [
+      // 【タブ1: ホーム（カレンダーと日課表示）】
       Column(
         children: [
           Center(
@@ -301,7 +417,6 @@ Future<void> scheduleNotification({
               child: ClockTimer(),
             ),
           ),
-
           TableCalendarSample(
             onDayTapped: (selectedDay) {
               setState(() {
@@ -309,8 +424,8 @@ Future<void> scheduleNotification({
               });
             },
             assignments: assignments,
+            plainTasks: plainTasks,
           ),
-
           Expanded(
             child: SingleChildScrollView(
               child: Container(
@@ -334,8 +449,7 @@ Future<void> scheduleNotification({
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${days[selectedDayIndex]}曜日の時間割 (タップして予定を追加)',
-                            //(textに絵文字を含めると表示が崩れるため修正 dev-mono-4)
+                            '${days[selectedDayIndex]}曜日の時間割 (${_getSemesterNameForDate(_selectedDay!)})',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -343,48 +457,70 @@ Future<void> scheduleNotification({
                             ),
                           ),
                           const SizedBox(height: 8),
-                          ...List.generate(periods.length, (periodIndex) {
-                            final subject =
-                                timetable[periodIndex][selectedDayIndex!];
-                            final assignment =
-                                (assignments.containsKey(dateKey))
-                                ? assignments[dateKey]![periodIndex]
-                                : '';
 
-                            return GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                _editAssignment(dateKey, periodIndex, subject);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 6.0,
+                          // ✨【修正】期間外（null）の場合はメッセージを出し、時間割リストを非表示に
+                          if (_getTimetableForDate(_selectedDay!) == null)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 24.0),
+                              child: Center(
+                                child: Text(
+                                  '設定された時間割の期間外です。',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontStyle: FontStyle.italic,
+                                  ),
                                 ),
-                                child: Row(
+                              ),
+                            )
+                          else
+                            ...List.generate(periods.length, (periodIndex) {
+                              final currentTimetable = _getTimetableForDate(
+                                _selectedDay!,
+                              )!;
+                              final subject =
+                                  currentTimetable[periodIndex][selectedDayIndex!];
+
+                              final thisPeriodTasks =
+                                  (periodTasks[dateKey] ?? [])
+                                      .asMap()
+                                      .entries
+                                      .where(
+                                        (entry) =>
+                                            entry.value['periodIndex'] ==
+                                            periodIndex,
+                                      )
+                                      .toList();
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8.0,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      width: 50,
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue.shade100,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          '${periods[periodIndex]}限',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 50,
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade100,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '${periods[periodIndex]}限',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
                                             subject.isEmpty
                                                 ? '（空きコマ）'
                                                 : subject,
@@ -398,30 +534,232 @@ Future<void> scheduleNotification({
                                                   : FontWeight.bold,
                                             ),
                                           ),
-                                          if (assignment.isNotEmpty) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '予定: $assignment',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.redAccent,
-                                                fontWeight: FontWeight.bold,
+                                        ),
+                                      ],
+                                    ),
+                                    if (thisPeriodTasks.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 16.0,
+                                          top: 4.0,
+                                        ),
+                                        child: Column(
+                                          children: thisPeriodTasks.map((
+                                            entry,
+                                          ) {
+                                            final globalIndex = entry.key;
+                                            final task = entry.value;
+                                            final isCompleted =
+                                                task['isCompleted'] as bool? ??
+                                                false;
+
+                                            return Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 2.0,
+                                                  ),
+                                              child: Row(
+                                                children: [
+                                                  Checkbox(
+                                                    value: isCompleted,
+                                                    onChanged: (bool? value) async {
+                                                      final box = Hive.box(
+                                                        'tasks',
+                                                      );
+                                                      setState(() {
+                                                        final updatedTask =
+                                                            Map<
+                                                              String,
+                                                              dynamic
+                                                            >.from(
+                                                              periodTasks[dateKey]![globalIndex],
+                                                            );
+                                                        updatedTask['isCompleted'] =
+                                                            value ?? false;
+                                                        periodTasks[dateKey]![globalIndex] =
+                                                            updatedTask;
+                                                      });
+                                                      await box.put(
+                                                        '${dateKey}_period',
+                                                        periodTasks[dateKey],
+                                                      );
+                                                    },
+                                                  ),
+                                                  Expanded(
+                                                    child: Text(
+                                                      task['text'] ?? '',
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: isCompleted
+                                                            ? Colors.grey
+                                                            : Colors.redAccent,
+                                                        decoration: isCompleted
+                                                            ? TextDecoration
+                                                                  .lineThrough
+                                                            : null,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.delete_outline,
+                                                      color: Colors.redAccent,
+                                                      size: 20,
+                                                    ),
+                                                    onPressed: () async {
+                                                      final box = Hive.box(
+                                                        'tasks',
+                                                      );
+                                                      setState(() {
+                                                        periodTasks[dateKey]!
+                                                            .removeAt(
+                                                              globalIndex,
+                                                            );
+                                                        final hasMoreTasks =
+                                                            periodTasks[dateKey]!.any(
+                                                              (t) =>
+                                                                  t['periodIndex'] ==
+                                                                  periodIndex,
+                                                            );
+                                                        if (!hasMoreTasks) {
+                                                          assignments[dateKey]![periodIndex] =
+                                                              '';
+                                                        }
+                                                      });
+                                                      await box.put(
+                                                        '${dateKey}_period',
+                                                        periodTasks[dateKey],
+                                                      );
+                                                      await box.put(
+                                                        dateKey,
+                                                        assignments[dateKey],
+                                                      );
+                                                    },
+                                                  ),
+                                                ],
                                               ),
-                                            ),
-                                          ],
-                                        ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            }),
+
+                          // その他の予定・タスクは期間外であっても独立して表示を維持
+                          if ((plainTasks[dateKey] ?? []).isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            const Divider(color: Colors.grey),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'その他の予定・タスク',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepPurple,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...(plainTasks[dateKey] ?? []).asMap().entries.map((
+                              entry,
+                            ) {
+                              final index = entry.key;
+                              final task = entry.value;
+                              final isCompleted =
+                                  task['isCompleted'] as bool? ?? false;
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 6.0,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: isCompleted,
+                                      onChanged: (bool? value) async {
+                                        final box = Hive.box('tasks');
+                                        setState(() {
+                                          final updatedTask =
+                                              Map<String, dynamic>.from(
+                                                plainTasks[dateKey]![index],
+                                              );
+                                          updatedTask['isCompleted'] =
+                                              value ?? false;
+                                          plainTasks[dateKey]![index] =
+                                              updatedTask;
+                                        });
+                                        await box.put(
+                                          '${dateKey}_plain',
+                                          plainTasks[dateKey],
+                                        );
+                                      },
+                                    ),
+                                    Container(
+                                      width: 65,
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: isCompleted
+                                            ? Colors.grey.shade200
+                                            : Colors.deepPurple.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          task['time'] ?? '時刻未設定',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            color: isCompleted
+                                                ? Colors.grey
+                                                : Colors.deepPurple,
+                                            decoration: isCompleted
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    const Icon(
-                                      Icons.chevron_right,
-                                      size: 16,
-                                      color: Colors.grey,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        task['text'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: isCompleted
+                                              ? Colors.grey
+                                              : Colors.black87,
+                                          decoration: isCompleted
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.redAccent,
+                                        size: 20,
+                                      ),
+                                      onPressed: () async {
+                                        final box = Hive.box('tasks');
+                                        setState(() {
+                                          plainTasks[dateKey]!.removeAt(index);
+                                        });
+                                        await box.put(
+                                          '${dateKey}_plain',
+                                          plainTasks[dateKey],
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
-                              ),
-                            );
-                          }),
+                              );
+                            }),
+                          ],
                         ],
                       ),
               ),
@@ -430,12 +768,41 @@ Future<void> scheduleNotification({
         ],
       ),
 
+      // 【タブ2: 時間割設定画面】
       TimetableScreen(
-        timetable: timetable,
-        onTimetableChanged: (updatedTimetable) {
+        timetable1: timetable1,
+        timetable2: timetable2,
+        semester1Start: semester1Start,
+        semester1End: semester1End,
+        semester2Start: semester2Start,
+        semester2End: semester2End,
+        onTimetable1Changed: (updated) async {
+          setState(() => timetable1 = updated);
+          await Hive.box(
+            'tasks',
+          ).put('timetable1', updated.map((r) => r.toList()).toList());
+        },
+        onTimetable2Changed: (updated) async {
+          setState(() => timetable2 = updated);
+          await Hive.box(
+            'tasks',
+          ).put('timetable2', updated.map((r) => r.toList()).toList());
+        },
+        onSemester1RangeChanged: (start, end) async {
           setState(() {
-            timetable = updatedTimetable;
+            semester1Start = start;
+            semester1End = end;
           });
+          await Hive.box('tasks').put('sem1_start', start?.toIso8601String());
+          await Hive.box('tasks').put('sem1_end', end?.toIso8601String());
+        },
+        onSemester2RangeChanged: (start, end) async {
+          setState(() {
+            semester2Start = start;
+            semester2End = end;
+          });
+          await Hive.box('tasks').put('sem2_start', start?.toIso8601String());
+          await Hive.box('tasks').put('sem2_end', end?.toIso8601String());
         },
       ),
     ];
@@ -477,7 +844,6 @@ Future<void> scheduleNotification({
           ],
         ),
       ),
-
       body: Stack(
         children: [
           IndexedStack(index: _currentIndex, children: _tabs),
@@ -487,9 +853,7 @@ Future<void> scheduleNotification({
                 onTap: () => setState(() => _isFabExpanded = false),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.25),
-                  ),
+                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
                 ),
               ),
             ),
@@ -503,14 +867,47 @@ Future<void> scheduleNotification({
                     setState(() => _isFabExpanded = false);
                   }),
                   const SizedBox(height: 12),
-                  _buildFabMenuItem('予定を追加する', () {
+                  _buildFabMenuItem('予定を追加する', () async {
                     setState(() => _isFabExpanded = false);
-                    Navigator.push(
+
+                    final result = await Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const AddEventScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const AddEventScreen()),
                     );
+
+                    if (result != null && result is Map<String, dynamic>) {
+                      final text = result['text'] as String;
+                      final periodIndex = result['periodIndex'] as int?;
+                      final time = result['time'] as TimeOfDay?;
+                      final DateTime selectedDate = result['date'] as DateTime;
+
+                      final String targetDateKey = DateFormat(
+                        'yyyy-MM-dd',
+                      ).format(selectedDate);
+
+                      int weekdayIndex = selectedDate.weekday - 1;
+                      if (weekdayIndex > 4) weekdayIndex = 0;
+
+                      final currentTimetable = _getTimetableForDate(
+                        selectedDate,
+                      );
+
+                      // ✨【修正】期間外（null）に予定追加した際のクラッシュ防止Nullチェックを追加
+                      final subject =
+                          (periodIndex != null &&
+                              periodIndex != -1 &&
+                              currentTimetable != null)
+                          ? currentTimetable[periodIndex][weekdayIndex]
+                          : '';
+
+                      _addNewAssignment(
+                        targetDateKey,
+                        periodIndex,
+                        text,
+                        time,
+                        subject,
+                      );
+                    }
                   }),
                   const SizedBox(height: 12),
                   _buildFabMenuItem('タスクを追加する', () {
@@ -522,16 +919,13 @@ Future<void> scheduleNotification({
           ],
         ],
       ),
-
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: () =>
-                  setState(() => _isFabExpanded = !_isFabExpanded),
+              onPressed: () => setState(() => _isFabExpanded = !_isFabExpanded),
               tooltip: 'メニューを開く',
               child: Icon(_isFabExpanded ? Icons.close : Icons.add),
             )
           : null,
-
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {

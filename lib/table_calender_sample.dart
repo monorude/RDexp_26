@@ -7,10 +7,12 @@ class TableCalendarSample extends StatefulWidget {
     super.key,
     required this.onDayTapped,
     required this.assignments,
+    required this.plainTasks, // ✨ 時限なしタスクを受け取る引数を追加
   });
 
   final ValueChanged<DateTime> onDayTapped;
   final Map<String, List<String>> assignments;
+  final Map<String, List<Map<String, dynamic>>> plainTasks; // ✨ 型を追加
 
   @override
   State<TableCalendarSample> createState() => _TableCalendarSampleState();
@@ -32,25 +34,32 @@ class _TableCalendarSampleState extends State<TableCalendarSample> {
         return isSameDay(_selectedDay, day);
       },
 
-      // カレンダーの日付ごとに表示するイベント（予定）を読み込む
+      // ✨ eventLoaderを修正して、両方の予定を合算する
       eventLoader: (day) {
         final dateKey = DateFormat('yyyy-MM-dd').format(day);
-        final dayEvents = widget.assignments[dateKey];
 
-        if (dayEvents != null) {
-          // 空欄じゃない予定だけをリストにして返す
-          return dayEvents.where((event) => event.isNotEmpty).toList();
-        }
-        return [];
+        // ① 時限あり予定（空文字を除外）
+        final dayEvents = widget.assignments[dateKey] ?? [];
+        final filteredEvents = dayEvents
+            .where((event) => event.isNotEmpty)
+            .toList();
+
+        // ② 時限なしタスク（textを取り出して空文字を除外）
+        final dayPlainTasks = widget.plainTasks[dateKey] ?? [];
+        final filteredTasks = dayPlainTasks
+            .map((task) => task['text'] as String? ?? '')
+            .where((text) => text.isNotEmpty)
+            .toList();
+
+        // ③ 両方を合わせたリストを返す（これでどちらに予定があってもドットが出ます）
+        return [...filteredEvents, ...filteredTasks];
       },
 
-      // カレンダーの見た目と「表示個数」のカスタム設定
       calendarStyle: const CalendarStyle(
         markerDecoration: BoxDecoration(
-          color: Colors.redAccent, // 🔴 点の色を赤にする
+          color: Colors.redAccent,
           shape: BoxShape.circle,
         ),
-        // 🌟 順番を正しく修正しました！これでリミッターが5個になります
         markersMaxCount: 5,
       ),
 
@@ -60,7 +69,6 @@ class _TableCalendarSampleState extends State<TableCalendarSample> {
           _focusedDay = focusedDay;
         });
 
-        // 実際にタップされた日付（selectedDay）を親に渡す
         widget.onDayTapped(selectedDay);
       },
     );
