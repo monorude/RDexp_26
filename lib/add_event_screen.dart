@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'NormalTask.dart';
 
 /// NormalTask モデルに基づいて予定情報を入力・登録するための画面
@@ -10,6 +11,8 @@ class AddEventScreen extends StatefulWidget {
 }
 
 class _AddEventScreenState extends State<AddEventScreen> {
+  late Box<NormalTask> _box;
+
   // 自由記述フォームのコントローラー
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -40,6 +43,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
     4: TimeOfDay(hour: 15, minute: 30),
     5: TimeOfDay(hour: 17, minute: 15),
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _box = Hive.box<NormalTask>('normalTasks');
+  }
 
   @override
   void dispose() {
@@ -156,7 +165,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   // 登録ボタン押下時の処理：検証・整形を行いタスクオブジェクトを構築する
-  void _onSubmit() {
+  Future<void> _onSubmit() async {
     final error = _validate();
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +185,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
 
     // 入力内容を NormalTask に整形する（isCompleted は登録時常に false）
-    // ignore: unused_local_variable
     final task = NormalTask(
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
@@ -186,8 +194,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
       collegeTime: _selectedPeriod ?? 0,
     );
 
-    // タスクの保存処理（Hive Box などへの書き込み）はここに記述する
+    await _box.add(task);
 
+    if (!mounted) return;
     Navigator.pop(context);
   }
 

@@ -9,6 +9,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'setting_page.dart';
 import 'add_event_screen.dart';
+import 'NormalTask.dart';
+import 'normal_task_adapter.dart';
 
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -20,6 +22,8 @@ WidgetsFlutterBinding.ensureInitialized();
 
   await Hive.initFlutter();
   await Hive.openBox('tasks'); // ← 課題保存用 Box
+  Hive.registerAdapter(NormalTaskAdapter());
+  await Hive.openBox<NormalTask>('normalTasks');
 
   // タイムゾーン初期化
   tz.initializeTimeZones();
