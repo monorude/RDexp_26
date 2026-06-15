@@ -142,10 +142,6 @@ class _TimetableScreenState extends State<TimetableScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('時間割設定'),
-        backgroundColor: Colors.blueAccent,
-      ),
       body: Column(
         children: [
           // ✨ 【追加】前期・後期切り替え ＆ 期限設定を行うコントロールバー

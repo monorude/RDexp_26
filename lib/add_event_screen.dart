@@ -42,9 +42,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   void initState() {
     super.initState();
     _box = Hive.box<NormalTask>('normalTasks');
-    _periodTimes = {
-      for (var i = 1; i <= 5; i++) i: PeriodTimeStore.getTime(i),
-    };
+    _periodTimes = {for (var i = 1; i <= 5; i++) i: PeriodTimeStore.getTime(i)};
   }
 
   @override
@@ -63,7 +61,19 @@ class _AddEventScreenState extends State<AddEventScreen> {
       lastDate: DateTime(2100),
     );
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _selectedDate = picked;
+
+        // 土曜日または日曜日が選択された場合、時限の選択を強制クリアする
+        if (picked.weekday == DateTime.saturday ||
+            picked.weekday == DateTime.sunday) {
+          _selectedPeriod = null;
+          // 時限由来の自動入力時刻が入っていた場合はそれもクリアする（手動入力時刻は残す）
+          if (!_isManualTime) {
+            _selectedTime = null;
+          }
+        }
+      });
     }
   }
 
@@ -191,7 +201,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
       effectiveTime.minute,
     );
 
-    // 入力内容を NormalTask に整形する（isCompleted は登録時常に false）
     // 入力内容を NormalTask に整形する
     final task = NormalTask(
       title: _titleController.text.trim(),
@@ -234,7 +243,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isPeriodDisabled = _isManualTime;
+    // 土曜日(6)または日曜日(7)が選択されているか判定
+    final bool isWeekend =
+        _selectedDate != null &&
+        (_selectedDate!.weekday == DateTime.saturday ||
+            _selectedDate!.weekday == DateTime.sunday);
+
+    // 手動入力中、または土日の場合は時限ドロップダウンを無効化（グレーアウト）する
+    final bool isPeriodDisabled = _isManualTime || isWeekend;
 
     return Scaffold(
       appBar: AppBar(title: const Text('予定を追加')),
@@ -315,6 +331,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                           ],
                         ],
                       ),
+                      // ✨【修正】手動入力中の警告のみ残し、土日の警告テキストの条件分岐を削除しました
                       if (_isManualTime)
                         const Padding(
                           padding: EdgeInsets.only(top: 4),
