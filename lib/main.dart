@@ -11,6 +11,7 @@ import 'setting_page.dart';
 import 'add_event_screen.dart';
 import 'NormalTask.dart';
 import 'normal_task_adapter.dart';
+import 'task_list_screen.dart';
 
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -31,6 +32,7 @@ void main() async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const ios = DarwinInitializationSettings();
+
   const initSettings = InitializationSettings(android: android, iOS: ios);
   await flutterLocalNotificationsPlugin.initialize(initSettings);
 
@@ -157,6 +159,7 @@ class _MyHomePageState extends State<MyHomePage> {
         }
         assignments[dateKey]![periodIndex] = 'has_task';
       });
+
       await box.put('${dateKey}_period', periodTasks[dateKey]);
       await box.put(dateKey, assignments[dateKey]);
     } else {
@@ -174,6 +177,7 @@ class _MyHomePageState extends State<MyHomePage> {
           'isCompleted': false,
         });
       });
+
       await box.put('${dateKey}_plain', plainTasks[dateKey]);
     }
 
@@ -219,7 +223,6 @@ class _MyHomePageState extends State<MyHomePage> {
   Map<String, List<Map<String, dynamic>>> periodTasks = {};
   Map<String, List<Map<String, dynamic>>> plainTasks = {};
 
-  // ✨【修正】戻り値を Nullable (List<List<String>>?) に変更し、期間外は null を返すように
   List<List<String>>? _getTimetableForDate(DateTime date) {
     final target = DateTime(date.year, date.month, date.day);
 
@@ -257,7 +260,7 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
-    return null; // ✨ どちらの期間内でもない場合は null を返す
+    return null;
   }
 
   // 日付から所属する期の名前を取得する（UI表示用）
@@ -298,12 +301,17 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
-    return '期間外'; // ✨ 文言をスッキリ「期間外」に変更
+    return '期間外';
   }
 
   @override
   void initState() {
     super.initState();
+    _loadTasksFromHive(); // 初期化時にHiveからデータを読み込む
+  }
+
+  // ★追加：Hiveからタスクデータを最新状態に再読み込みする関数
+  void _loadTasksFromHive() {
     final box = Hive.box('tasks');
 
     // 前期・後期の時間割データをそれぞれHiveから読み込み
@@ -342,6 +350,11 @@ class _MyHomePageState extends State<MyHomePage> {
     if (s2StartStr != null) semester2Start = DateTime.parse(s2StartStr);
     if (s2EndStr != null) semester2End = DateTime.parse(s2EndStr);
 
+    // 再読み込み時の重複を防ぐために一度クリアする
+    plainTasks.clear();
+    periodTasks.clear();
+    assignments.clear();
+
     // タスクデータの読み込み
     for (var key in box.keys) {
       if (key is String) {
@@ -377,6 +390,8 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
     });
+
+    setState(() {}); // 読み込み後に画面を再描画する
   }
 
   Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
@@ -397,7 +412,6 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     int? selectedDayIndex;
     String dateKey = '';
-
     if (_selectedDay != null) {
       int weekdayIndex = _selectedDay!.weekday - 1;
       if (weekdayIndex < 5) {
@@ -439,12 +453,12 @@ class _MyHomePageState extends State<MyHomePage> {
                   color: Colors.grey.shade50,
                   border: Border(top: BorderSide(color: Colors.grey.shade300)),
                 ),
-                child: selectedDayIndex == null
+                child: _selectedDay == null
                     ? const Center(
                         child: Padding(
                           padding: EdgeInsets.all(16.0),
                           child: Text(
-                            'カレンダーの日付（月〜金）をタップすると\nここにその日の時間割が表示されます',
+                            'カレンダーの日付をタップすると\nここにその日の時間割や予定が表示されます',
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -452,208 +466,218 @@ class _MyHomePageState extends State<MyHomePage> {
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${days[selectedDayIndex]}曜日の時間割 (${_getSemesterNameForDate(_selectedDay!)})',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blueAccent,
+                          if (selectedDayIndex != null) ...[
+                            Text(
+                              '${days[selectedDayIndex]}曜日の時間割 (${_getSemesterNameForDate(_selectedDay!)})',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueAccent,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
+                            const SizedBox(height: 8),
 
-                          // ✨【修正】期間外（null）の場合はメッセージを出し、時間割リストを非表示に
-                          if (_getTimetableForDate(_selectedDay!) == null)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 24.0),
-                              child: Center(
-                                child: Text(
-                                  '設定された時間割の期間外です。',
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontStyle: FontStyle.italic,
+                            if (_getTimetableForDate(_selectedDay!) == null)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 24.0),
+                                child: Center(
+                                  child: Text(
+                                    '設定された時間割の期間外です。',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontStyle: FontStyle.italic,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            )
-                          else
-                            ...List.generate(periods.length, (periodIndex) {
-                              final currentTimetable = _getTimetableForDate(
-                                _selectedDay!,
-                              )!;
-                              final subject =
-                                  currentTimetable[periodIndex][selectedDayIndex!];
-
-                              final thisPeriodTasks =
-                                  (periodTasks[dateKey] ?? [])
-                                      .asMap()
-                                      .entries
-                                      .where(
-                                        (entry) =>
-                                            entry.value['periodIndex'] ==
-                                            periodIndex,
-                                      )
-                                      .toList();
-
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8.0,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 50,
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+                              )
+                            else
+                              ...List.generate(periods.length, (periodIndex) {
+                                final currentTimetable = _getTimetableForDate(
+                                  _selectedDay!,
+                                )!;
+                                final subject =
+                                    currentTimetable[periodIndex][selectedDayIndex!];
+                                final thisPeriodTasks =
+                                    (periodTasks[dateKey] ?? [])
+                                        .asMap()
+                                        .entries
+                                        .where(
+                                          (entry) =>
+                                              entry.value['periodIndex'] ==
+                                              periodIndex,
+                                        )
+                                        .toList();
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8.0,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 50,
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
                                             ),
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              '${periods[periodIndex]}限',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
+                                            child: Center(
+                                              child: Text(
+                                                '${periods[periodIndex]}限',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            subject.isEmpty
-                                                ? '（空きコマ）'
-                                                : subject,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: subject.isEmpty
-                                                  ? Colors.grey
-                                                  : Colors.black87,
-                                              fontWeight: subject.isEmpty
-                                                  ? FontWeight.normal
-                                                  : FontWeight.bold,
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              subject.isEmpty
+                                                  ? '（空きコマ）'
+                                                  : subject,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: subject.isEmpty
+                                                    ? Colors.grey
+                                                    : Colors.black87,
+                                                fontWeight: subject.isEmpty
+                                                    ? FontWeight.normal
+                                                    : FontWeight.bold,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (thisPeriodTasks.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 16.0,
-                                          top: 4.0,
-                                        ),
-                                        child: Column(
-                                          children: thisPeriodTasks.map((
-                                            entry,
-                                          ) {
-                                            final globalIndex = entry.key;
-                                            final task = entry.value;
-                                            final isCompleted =
-                                                task['isCompleted'] as bool? ??
-                                                false;
-
-                                            return Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 2.0,
-                                                  ),
-                                              child: Row(
-                                                children: [
-                                                  Checkbox(
-                                                    value: isCompleted,
-                                                    onChanged: (bool? value) async {
-                                                      final box = Hive.box(
-                                                        'tasks',
-                                                      );
-                                                      setState(() {
-                                                        final updatedTask =
-                                                            Map<
-                                                              String,
-                                                              dynamic
-                                                            >.from(
-                                                              periodTasks[dateKey]![globalIndex],
-                                                            );
-                                                        updatedTask['isCompleted'] =
-                                                            value ?? false;
-                                                        periodTasks[dateKey]![globalIndex] =
-                                                            updatedTask;
-                                                      });
-                                                      await box.put(
-                                                        '${dateKey}_period',
-                                                        periodTasks[dateKey],
-                                                      );
-                                                    },
-                                                  ),
-                                                  Expanded(
-                                                    child: Text(
-                                                      task['text'] ?? '',
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: isCompleted
-                                                            ? Colors.grey
-                                                            : Colors.redAccent,
-                                                        decoration: isCompleted
-                                                            ? TextDecoration
-                                                                  .lineThrough
-                                                            : null,
+                                        ],
+                                      ),
+                                      if (thisPeriodTasks.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 16.0,
+                                            top: 4.0,
+                                          ),
+                                          child: Column(
+                                            children: thisPeriodTasks.map((
+                                              entry,
+                                            ) {
+                                              final globalIndex = entry.key;
+                                              final task = entry.value;
+                                              final isCompleted =
+                                                  task['isCompleted']
+                                                      as bool? ??
+                                                  false;
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 2.0,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    Checkbox(
+                                                      value: isCompleted,
+                                                      onChanged: (bool? value) async {
+                                                        final box = Hive.box(
+                                                          'tasks',
+                                                        );
+                                                        setState(() {
+                                                          final updatedTask =
+                                                              Map<
+                                                                String,
+                                                                dynamic
+                                                              >.from(
+                                                                periodTasks[dateKey]![globalIndex],
+                                                              );
+                                                          updatedTask['isCompleted'] =
+                                                              value ?? false;
+                                                          periodTasks[dateKey]![globalIndex] =
+                                                              updatedTask;
+                                                        });
+                                                        await box.put(
+                                                          '${dateKey}_period',
+                                                          periodTasks[dateKey],
+                                                        );
+                                                      },
+                                                    ),
+                                                    Expanded(
+                                                      child: Text(
+                                                        task['text'] ?? '',
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: isCompleted
+                                                              ? Colors.grey
+                                                              : Colors
+                                                                    .redAccent,
+                                                          decoration:
+                                                              isCompleted
+                                                              ? TextDecoration
+                                                                    .lineThrough
+                                                              : null,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(
-                                                      Icons.delete_outline,
-                                                      color: Colors.redAccent,
-                                                      size: 20,
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                        Icons.delete_outline,
+                                                        color: Colors.redAccent,
+                                                        size: 20,
+                                                      ),
+                                                      onPressed: () async {
+                                                        final box = Hive.box(
+                                                          'tasks',
+                                                        );
+                                                        setState(() {
+                                                          periodTasks[dateKey]!
+                                                              .removeAt(
+                                                                globalIndex,
+                                                              );
+                                                          final hasMoreTasks =
+                                                              periodTasks[dateKey]!.any(
+                                                                (t) =>
+                                                                    t['periodIndex'] ==
+                                                                    periodIndex,
+                                                              );
+                                                          if (!hasMoreTasks) {
+                                                            assignments[dateKey]![periodIndex] =
+                                                                '';
+                                                          }
+                                                        });
+                                                        await box.put(
+                                                          '${dateKey}_period',
+                                                          periodTasks[dateKey],
+                                                        );
+                                                        await box.put(
+                                                          dateKey,
+                                                          assignments[dateKey],
+                                                        );
+                                                      },
                                                     ),
-                                                    onPressed: () async {
-                                                      final box = Hive.box(
-                                                        'tasks',
-                                                      );
-                                                      setState(() {
-                                                        periodTasks[dateKey]!
-                                                            .removeAt(
-                                                              globalIndex,
-                                                            );
-                                                        final hasMoreTasks =
-                                                            periodTasks[dateKey]!.any(
-                                                              (t) =>
-                                                                  t['periodIndex'] ==
-                                                                  periodIndex,
-                                                            );
-                                                        if (!hasMoreTasks) {
-                                                          assignments[dateKey]![periodIndex] =
-                                                              '';
-                                                        }
-                                                      });
-                                                      await box.put(
-                                                        '${dateKey}_period',
-                                                        periodTasks[dateKey],
-                                                      );
-                                                      await box.put(
-                                                        dateKey,
-                                                        assignments[dateKey],
-                                                      );
-                                                    },
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
+                                                  ],
+                                                ),
+                                              );
+                                            }).toList(),
+                                          ),
                                         ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
+                                    ],
+                                  ),
+                                );
+                              }),
+                          ] else ...[
+                            Text(
+                              '${DateFormat('E', 'ja').format(_selectedDay!)}曜日は時間割の登録がありません',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
 
-                          // その他の予定・タスクは期間外であっても独立して表示を維持
+                          // その他の予定・タスクは曜日・期間を問わず独立して表示
                           if ((plainTasks[dateKey] ?? []).isNotEmpty) ...[
                             const SizedBox(height: 16),
                             const Divider(color: Colors.grey),
@@ -809,13 +833,18 @@ class _MyHomePageState extends State<MyHomePage> {
           await Hive.box('tasks').put('sem2_end', end?.toIso8601String());
         },
       ),
+
+      // タブ3: タスク一覧画面
+      const MyTabScreen(),
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(_currentIndex == 0 ? widget.title : '時間割設定'),
-      ),
+      appBar: _currentIndex == 2
+          ? null
+          : AppBar(
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+              title: Text(_currentIndex == 0 ? widget.title : '時間割設定'),
+            ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -873,37 +902,29 @@ class _MyHomePageState extends State<MyHomePage> {
                   const SizedBox(height: 12),
                   _buildFabMenuItem('予定を追加する', () async {
                     setState(() => _isFabExpanded = false);
-
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const AddEventScreen()),
                     );
-
                     if (result != null && result is Map<String, dynamic>) {
                       final text = result['text'] as String;
                       final periodIndex = result['periodIndex'] as int?;
                       final time = result['time'] as TimeOfDay?;
                       final DateTime selectedDate = result['date'] as DateTime;
-
                       final String targetDateKey = DateFormat(
                         'yyyy-MM-dd',
                       ).format(selectedDate);
-
                       int weekdayIndex = selectedDate.weekday - 1;
                       if (weekdayIndex > 4) weekdayIndex = 0;
-
                       final currentTimetable = _getTimetableForDate(
                         selectedDate,
                       );
-
-                      // ✨【修正】期間外（null）に予定追加した際のクラッシュ防止Nullチェックを追加
                       final subject =
                           (periodIndex != null &&
                               periodIndex != -1 &&
                               currentTimetable != null)
                           ? currentTimetable[periodIndex][weekdayIndex]
                           : '';
-
                       _addNewAssignment(
                         targetDateKey,
                         periodIndex,
@@ -937,6 +958,10 @@ class _MyHomePageState extends State<MyHomePage> {
             _currentIndex = index;
             _isFabExpanded = false;
           });
+          // ★修正：ホームタブ（0番目）に戻ったとき、Hiveデータを再ロードしてカレンダー側を最新に同期する
+          if (index == 0) {
+            _loadTasksFromHive();
+          }
         },
         items: const [
           BottomNavigationBarItem(
@@ -944,6 +969,7 @@ class _MyHomePageState extends State<MyHomePage> {
             label: 'ホーム',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.table_chart), label: '時間割'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'タスク一覧'),
         ],
       ),
     );
