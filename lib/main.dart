@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -104,7 +103,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
-  bool _isFabExpanded = false;
   int _notificationId = 0;
 
   Future<void> scheduleNotification({
@@ -392,20 +390,6 @@ class _MyHomePageState extends State<MyHomePage> {
     });
 
     setState(() {}); // 読み込み後に画面を再描画する
-  }
-
-  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        elevation: 6,
-      ),
-      child: Text(label),
-    );
   }
 
   @override
@@ -877,78 +861,44 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
       ),
-      body: Stack(
-        children: [
-          IndexedStack(index: _currentIndex, children: _tabs),
-          if (_isFabExpanded) ...[
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => setState(() => _isFabExpanded = false),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 16,
-              bottom: 80,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildFabMenuItem('繰り返し予定を追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('予定を追加する', () async {
-                    setState(() => _isFabExpanded = false);
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddEventScreen()),
-                    );
-                    if (result != null && result is Map<String, dynamic>) {
-                      final text = result['text'] as String;
-                      final periodIndex = result['periodIndex'] as int?;
-                      final time = result['time'] as TimeOfDay?;
-                      final DateTime selectedDate = result['date'] as DateTime;
-                      final String targetDateKey = DateFormat(
-                        'yyyy-MM-dd',
-                      ).format(selectedDate);
-                      int weekdayIndex = selectedDate.weekday - 1;
-                      if (weekdayIndex > 4) weekdayIndex = 0;
-                      final currentTimetable = _getTimetableForDate(
-                        selectedDate,
-                      );
-                      final subject =
-                          (periodIndex != null &&
-                              periodIndex != -1 &&
-                              currentTimetable != null)
-                          ? currentTimetable[periodIndex][weekdayIndex]
-                          : '';
-                      _addNewAssignment(
-                        targetDateKey,
-                        periodIndex,
-                        text,
-                        time,
-                        subject,
-                      );
-                    }
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('タスクを追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+      body: IndexedStack(index: _currentIndex, children: _tabs),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: () => setState(() => _isFabExpanded = !_isFabExpanded),
-              tooltip: 'メニューを開く',
-              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                );
+                if (result != null && result is Map<String, dynamic>) {
+                  final text = result['text'] as String;
+                  final periodIndex = result['periodIndex'] as int?;
+                  final time = result['time'] as TimeOfDay?;
+                  final DateTime selectedDate = result['date'] as DateTime;
+                  final String targetDateKey = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(selectedDate);
+                  int weekdayIndex = selectedDate.weekday - 1;
+                  if (weekdayIndex > 4) weekdayIndex = 0;
+                  final currentTimetable = _getTimetableForDate(
+                    selectedDate,
+                  );
+                  final subject =
+                      (periodIndex != null &&
+                          periodIndex != -1 &&
+                          currentTimetable != null)
+                      ? currentTimetable[periodIndex][weekdayIndex]
+                      : '';
+                  _addNewAssignment(
+                    targetDateKey,
+                    periodIndex,
+                    text,
+                    time,
+                    subject,
+                  );
+                }
+              },
+              tooltip: '予定を追加する',
+              child: const Icon(Icons.add),
             )
           : null,
       bottomNavigationBar: BottomNavigationBar(
@@ -956,7 +906,6 @@ class _MyHomePageState extends State<MyHomePage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
-            _isFabExpanded = false;
           });
           // ★修正：ホームタブ（0番目）に戻ったとき、Hiveデータを再ロードしてカレンダー側を最新に同期する
           if (index == 0) {

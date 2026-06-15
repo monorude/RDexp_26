@@ -26,7 +26,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // true のとき、_selectedTime はユーザーが直接選択した値であり時限ドロップダウンを無効化する
   bool _isManualTime = false;
 
-  // null: 未選択、1〜5: 各時限
+  // null: 未選択、1から5: 各時限
   int? _selectedPeriod;
 
   // タグ管理
@@ -37,6 +37,27 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   // 時限ごとの授業開始時刻（PeriodTimeStore から initState で読み込む）
   late Map<int, TimeOfDay> _periodTimes;
+
+  // 繰り返し設定パネルの開閉状態
+  bool _isRepeatExpanded = false;
+
+  // 繰り返し期間：週・隔週・月（null は「なし」=繰り返しなし）
+  String? _repeatInterval;
+
+  // 繰り返し期限：月・年・前期・後期（null は「なし」）
+  String? _repeatEndType;
+
+  // 非通知設定（true の場合、登録時に非通知フラグをオンにする）
+  bool _isMuted = false;
+
+  // 繰り返し期間の選択肢
+  static const List<String> _repeatIntervalOptions = ['週', '隔週', '月'];
+
+  // 繰り返し期限の選択肢
+  static const List<String> _repeatEndTypeOptions = ['月', '年', '前期', '後期'];
+
+  // 繰り返し設定が登録されているか（繰り返し期間が選択されていれば true）
+  bool get _hasRepeatSettings => _repeatInterval != null;
 
   @override
   void initState() {
@@ -116,7 +137,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
-  // 🌟 手動で時刻が入力された場合、どの時限のコマに割り振るかを自動判定するヘルパー関数
+  // 手動で時刻が入力された場合、どの時限のコマに割り振るかを自動判定するヘルパー関数
   int _determinePeriod(TimeOfDay? time) {
     if (time == null) return 1; // 未選択ならデフォルト1限
     final minutes = time.hour * 60 + time.minute;
@@ -202,6 +223,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
 
     // 入力内容を NormalTask に整形する
+    // 接続部1: NormalTask / normal_task_adapter.dart への追加が必要
+    //   - repeatInterval (String?, @HiveField(6)): _repeatInterval をそのまま保存
+    //       '週' | '隔週' | '月' | null（null=繰り返しなし）
+    //   - repeatEndType  (String?, @HiveField(7)): _repeatEndType をそのまま保存
+    //       '月' | '年' | '前期' | '後期' | null（null=期限なし）
+    //   - isMuted        (bool,    @HiveField(8)): _isMuted をそのまま保存（非通知フラグ）
+    //   NormalTask のコンストラクタに上記3引数を追加し、
+    //   normal_task_adapter.dart の read/write 処理にも対応するフィールドを追加する。
     final task = NormalTask(
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
@@ -212,12 +241,26 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
 
     await _box.add(task);
+    // 接続部2: 繰り返し予定の展開処理
+    //   _repeatInterval が null でない場合、ここで繰り返し予定を生成する。
+    //   - '週'/'隔週'/'月' の間隔で dueDate を進め、_repeatEndType
+    //     （'月'=月末、'年'=年度末、'前期'/'後期'=該当学期末）に達するまで
+    //     繰り返し、複数の NormalTask を生成して _box.addAll() などで保存する。
+    //   - もしくは、繰り返しルール（interval/endType と起点日）のみを1件保存し、
+    //     一覧・カレンダー表示側で動的に展開する設計にする。
+    //   - 前期・後期の期間は setting_page.dart で設定された
+    //     semester1/2 の開始・終了日（Hive 'tasks' ボックス）を参照する。
 
     if (!mounted) return;
-    // 🌟 時限（1〜5）を確定させ、0から始まるインデックス（0〜4）に変換する
+    // 時限（1から5）を確定させ、0から始まるインデックス（0から4）に変換する
     final periodIndex = _selectedPeriod != null ? _selectedPeriod! - 1 : -1;
 
-    // 🌟 データを Map に詰めて、Navigator.pop で main.dart に返却する
+    // データを Map に詰めて、Navigator.pop で main.dart に返却する
+    // 接続部3: main.dart 側で繰り返し予定・非通知設定を扱う場合、
+    //   以下のキーを Map に追加して返却する。
+    //   'repeatInterval': _repeatInterval,
+    //   'repeatEndType': _repeatEndType,
+    //   'isMuted': _isMuted,
     Navigator.pop(context, {
       'text': _titleController.text.trim(),
       'periodIndex': periodIndex,
@@ -280,21 +323,113 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 hintText: '説明を入力（任意）',
                 border: OutlineInputBorder(),
               ),
-              maxLines: 3,
-              minLines: 3,
+              // 繰り返し設定・非通知設定の追加分を1画面に収めるため、説明欄は短縮表示にする
+              maxLines: 2,
+              minLines: 1,
             ),
             const SizedBox(height: 20),
 
-            // 開始日選択
+            // 開始日選択・繰り返し設定
             const Text('開始日', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            OutlinedButton.icon(
-              onPressed: _pickDate,
-              icon: const Icon(Icons.calendar_today, size: 18),
-              label: Text(
-                _selectedDate != null ? _formatDate(_selectedDate!) : '日付を選択',
-              ),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text(
+                    _selectedDate != null
+                        ? _formatDate(_selectedDate!)
+                        : '日付を選択',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _isRepeatExpanded = !_isRepeatExpanded);
+                  },
+                  // 繰り返し設定が登録済みの場合は配色を変え、パネルを開かずとも一目で分かるようにする
+                  style: _hasRepeatSettings
+                      ? OutlinedButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primaryContainer,
+                          foregroundColor:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        )
+                      : null,
+                  icon: Icon(
+                    _isRepeatExpanded ? Icons.expand_less : Icons.repeat,
+                    size: 18,
+                  ),
+                  label: const Text('繰り返し設定'),
+                ),
+              ],
             ),
+            if (_isRepeatExpanded) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '繰り返し期間',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    DropdownButton<String?>(
+                      value: _repeatInterval,
+                      isExpanded: true,
+                      onChanged: (value) {
+                        setState(() => _repeatInterval = value);
+                      },
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('なし'),
+                        ),
+                        ..._repeatIntervalOptions.map(
+                          (v) => DropdownMenuItem<String?>(
+                            value: v,
+                            child: Text(v),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '繰り返し期限',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    DropdownButton<String?>(
+                      value: _repeatEndType,
+                      isExpanded: true,
+                      onChanged: (value) {
+                        setState(() => _repeatEndType = value);
+                      },
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('なし'),
+                        ),
+                        ..._repeatEndTypeOptions.map(
+                          (v) => DropdownMenuItem<String?>(
+                            value: v,
+                            child: Text(v),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
 
             // 開始時刻と時限
@@ -331,7 +466,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                           ],
                         ],
                       ),
-                      // ✨【修正】手動入力中の警告のみ残し、土日の警告テキストの条件分岐を削除しました
+                      // 【修正】手動入力中の警告のみ残し、土日の警告テキストの条件分岐を削除しました
                       if (_isManualTime)
                         const Padding(
                           padding: EdgeInsets.only(top: 4),
@@ -379,6 +514,20 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 非通知設定
+            Row(
+              children: [
+                FilterChip(
+                  label: const Text('通知しない'),
+                  selected: _isMuted,
+                  onSelected: (value) {
+                    setState(() => _isMuted = value);
+                  },
                 ),
               ],
             ),
