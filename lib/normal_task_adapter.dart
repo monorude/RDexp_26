@@ -16,15 +16,18 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
       description: fields[1] as String,
       dueDate: fields[2] as DateTime,
       isCompleted: fields[3] as bool,
-      tag: fields[4] as String,
+      tags: (fields[4] as List?)?.cast<String>() ?? [],
       collegeTime: fields[5] as int,
+      repeatInterval: fields[6] as String?,
+      repeatEndType: fields[7] as String?,
+      isMuted: fields[8] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, NormalTask obj) {
     writer
-      ..writeByte(6) // フィールド数
+      ..writeByte(9) // フィールドの総数
       ..writeByte(0)
       ..write(obj.title)
       ..writeByte(1)
@@ -34,9 +37,15 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
       ..writeByte(3)
       ..write(obj.isCompleted)
       ..writeByte(4)
-      ..write(obj.tag)
+      ..write(obj.tags)
       ..writeByte(5)
-      ..write(obj.collegeTime);
+      ..write(obj.collegeTime)
+      ..writeByte(6)
+      ..write(obj.repeatInterval)
+      ..writeByte(7)
+      ..write(obj.repeatEndType) // ✨ ここを正しい記述に直しました
+      ..writeByte(8)
+      ..write(obj.isMuted);
   }
 
   @override
