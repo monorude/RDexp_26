@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'period_time_store.dart';
+
+// バグ報告フォームのURL（プレースホルダー）
+const String _bugReportUrl = 'https://example.com/bug-report';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -152,6 +156,37 @@ class _SettingPageState extends State<SettingPage> {
               onPressed: _showClearAllConfirmDialog,
             ),
           ),
+          const Divider(height: 32),
+          _SectionHeader(title: 'サポート'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              icon: const Icon(Icons.bug_report_outlined),
+              label: const Text('バグを報告する'),
+              onPressed: () async {
+                final uri = Uri.parse(_bugReportUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+          ),
+          const Divider(height: 32),
+          _SectionHeader(title: 'バージョン情報'),
+          const ListTile(
+            leading: Icon(Icons.info_outline),
+            title: Text('アプリ名'),
+            trailing: Text('hoge@2026'),
+          ),
+          const ListTile(
+            leading: Icon(Icons.tag),
+            title: Text('バージョン'),
+            trailing: Text('v0.9.1'),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
