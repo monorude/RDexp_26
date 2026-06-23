@@ -30,7 +30,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   int? _selectedPeriod;
 
   // タグ管理
-  String? _selectedTag;
+  final List<String> _selectedTags = []; // 複数選択用のリスト
 
   // タグ一覧の読み込み処理（Hive Box などからの取得）はここに記述する
   final List<String> _availableTags = [];
@@ -64,6 +64,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
     super.initState();
     _box = Hive.box<NormalTask>('normalTasks');
     _periodTimes = {for (var i = 1; i <= 5; i++) i: PeriodTimeStore.getTime(i)};
+
+    final taskBox = Hive.box('tasks');
+    final savedTags = taskBox.get('available_tags');
+    if (savedTags is List) {
+      _availableTags.addAll(List<String>.from(savedTags));
+    }
   }
 
   @override
@@ -137,18 +143,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
-  // 手動で時刻が入力された場合、どの時限のコマに割り振るかを自動判定するヘルパー関数
-  int _determinePeriod(TimeOfDay? time) {
-    if (time == null) return 1; // 未選択ならデフォルト1限
-    final minutes = time.hour * 60 + time.minute;
-
-    if (minutes >= 17 * 60 + 15) return 5; // 17:15以降は5限
-    if (minutes >= 15 * 60 + 30) return 4; // 15:30以降は4限
-    if (minutes >= 13 * 60 + 45) return 3; // 13:45以降は3限
-    if (minutes >= 11 * 60 + 5) return 2; // 11:05以降は2限
-    return 1; // それ以前は1限
-  }
-
   // タグ作成ダイアログを表示し、入力されたタグをリストに追加する
   void _showCreateTagDialog() {
     final tagController = TextEditingController();
@@ -170,13 +164,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
             child: const Text('キャンセル'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final tagName = tagController.text.trim();
               if (tagName.isNotEmpty && !_availableTags.contains(tagName)) {
                 setState(() {
                   _availableTags.add(tagName);
-                  _selectedTag = tagName;
+                  _selectedTags.add(tagName); // 作成したタグを選択状態に追加
                 });
+
+                final taskBox = Hive.box('tasks');
+                await taskBox.put('available_tags', _availableTags);
               }
               Navigator.pop(context);
             },
@@ -187,7 +184,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // 入力内容を検証し、問題があればエラーメッセージを返す（正常なら null を返す）
+  // 入力内容を検証
   String? _validate() {
     if (_titleController.text.trim().isEmpty) {
       return 'タイトルを入力してください';
@@ -202,7 +199,62 @@ class _AddEventScreenState extends State<AddEventScreen> {
     return null;
   }
 
-  // 登録ボタン押下時の処理：検証・整形を行いタスクオブジェクトを構築する
+  // 繰り返し期限（EndType）から具体的な最終終了日を計算するヘルパー
+  DateTime _calculateEndDate(DateTime startDate, String? endType) {
+    if (endType == null) {
+      // 期限の指定がない場合は、暫定的に開始日の3ヶ月後を期限にする（無限ループ防止）
+      return startDate.add(const Duration(days: 90));
+    }
+
+    switch (endType) {
+      case '月':
+        return DateTime(startDate.year, startDate.month + 1, startDate.day);
+      case '年':
+        return DateTime(startDate.year + 1, startDate.month, startDate.day);
+      case '前期':
+        int targetYear = startDate.year;
+        if (startDate.month >= 10) targetYear += 1;
+        return DateTime(targetYear, 9, 30, 23, 59);
+      case '後期':
+        int targetYear = startDate.year;
+        if (startDate.month >= 4) targetYear += 1;
+        return DateTime(targetYear, 3, 31, 23, 59);
+      default:
+        return startDate;
+    }
+  }
+
+  // 31日問題を考慮した月加算ロジックを含む次の予定日計算
+  DateTime _getNextDueDate(DateTime current, String interval) {
+    switch (interval) {
+      case '週':
+        return current.add(const Duration(days: 7));
+      case '隔週':
+        return current.add(const Duration(days: 14));
+      case '月':
+        final nextMonth = current.month + 1;
+        final nextYear = current.year + (nextMonth > 12 ? 1 : 0);
+        final targetMonth = nextMonth > 12 ? 1 : nextMonth;
+
+        // 翌月の末日を確認するために、翌々月の0日（＝翌月末日）を取得
+        final lastDayOfNextMonth = DateTime(nextYear, targetMonth + 1, 0).day;
+        final targetDay = current.day > lastDayOfNextMonth
+            ? lastDayOfNextMonth
+            : current.day;
+
+        return DateTime(
+          nextYear,
+          targetMonth,
+          targetDay,
+          current.hour,
+          current.minute,
+        );
+      default:
+        return current.add(const Duration(days: 7));
+    }
+  }
+
+  // 登録ボタン押下時の処理
   Future<void> _onSubmit() async {
     final error = _validate();
     if (error != null) {
@@ -212,9 +264,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
       return;
     }
 
-    // 時刻が未入力の場合は 0:00 として扱う
     final effectiveTime = _selectedTime ?? const TimeOfDay(hour: 0, minute: 0);
-    final dueDate = DateTime(
+    final baseDueDate = DateTime(
       _selectedDate!.year,
       _selectedDate!.month,
       _selectedDate!.day,
@@ -222,61 +273,55 @@ class _AddEventScreenState extends State<AddEventScreen> {
       effectiveTime.minute,
     );
 
-    // 入力内容を NormalTask に整形する
-    // 接続部1: NormalTask / normal_task_adapter.dart への追加が必要
-    //   - repeatInterval (String?, @HiveField(6)): _repeatInterval をそのまま保存
-    //       '週' | '隔週' | '月' | null（null=繰り返しなし）
-    //   - repeatEndType  (String?, @HiveField(7)): _repeatEndType をそのまま保存
-    //       '月' | '年' | '前期' | '後期' | null（null=期限なし）
-    //   - isMuted        (bool,    @HiveField(8)): _isMuted をそのまま保存（非通知フラグ）
-    //   NormalTask のコンストラクタに上記3引数を追加し、
-    //   normal_task_adapter.dart の read/write 処理にも対応するフィールドを追加する。
-    final task = NormalTask(
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim(),
-      dueDate: dueDate,
-      isCompleted: false,
-      tag: _selectedTag ?? '',
-      collegeTime: _selectedPeriod ?? 0,
-    );
+    if (_hasRepeatSettings && _repeatInterval != null) {
+      final endDate = _calculateEndDate(baseDueDate, _repeatEndType);
+      DateTime currentDueDate = baseDueDate;
 
-    await _box.add(task);
-    // 接続部2: 繰り返し予定の展開処理
-    //   _repeatInterval が null でない場合、ここで繰り返し予定を生成する。
-    //   - '週'/'隔週'/'月' の間隔で dueDate を進め、_repeatEndType
-    //     （'月'=月末、'年'=年度末、'前期'/'後期'=該当学期末）に達するまで
-    //     繰り返し、複数の NormalTask を生成して _box.addAll() などで保存する。
-    //   - もしくは、繰り返しルール（interval/endType と起点日）のみを1件保存し、
-    //     一覧・カレンダー表示側で動的に展開する設計にする。
-    //   - 前期・後期の期間は setting_page.dart で設定された
-    //     semester1/2 の開始・終了日（Hive 'tasks' ボックス）を参照する。
+      while (currentDueDate.isBefore(endDate) ||
+          currentDueDate.isAtSameMomentAs(endDate)) {
+        final task = NormalTask(
+          title: _titleController.text.trim(),
+          description: _descriptionController.text.trim(),
+          dueDate: currentDueDate,
+          isCompleted: false,
+          tags: List<String>.from(_selectedTags), // リストのコピーを渡してメモリ参照を分離
+          collegeTime: _selectedPeriod ?? 0,
+          repeatInterval: _repeatInterval,
+          repeatEndType: _repeatEndType,
+          isMuted: _isMuted,
+        );
+
+        await _box.add(task);
+        currentDueDate = _getNextDueDate(currentDueDate, _repeatInterval!);
+      }
+    } else {
+      final task = NormalTask(
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        dueDate: baseDueDate,
+        isCompleted: false,
+        tags: List<String>.from(_selectedTags), // ここも参照を分離
+        collegeTime: _selectedPeriod ?? 0,
+        repeatInterval: _repeatInterval,
+        repeatEndType: _repeatEndType,
+        isMuted: _isMuted,
+      );
+
+      await _box.add(task);
+    }
 
     if (!mounted) return;
-    // 時限（1から5）を確定させ、0から始まるインデックス（0から4）に変換する
-    final periodIndex = _selectedPeriod != null ? _selectedPeriod! - 1 : -1;
 
-    // データを Map に詰めて、Navigator.pop で main.dart に返却する
-    // 接続部3: main.dart 側で繰り返し予定・非通知設定を扱う場合、
-    //   以下のキーを Map に追加して返却する。
-    //   'repeatInterval': _repeatInterval,
-    //   'repeatEndType': _repeatEndType,
-    //   'isMuted': _isMuted,
-    Navigator.pop(context, {
-      'text': _titleController.text.trim(),
-      'periodIndex': periodIndex,
-      'time': _selectedTime,
-      'date': _selectedDate,
-    });
+    // 呼び出し元に「登録が完了したこと(true)」を伝えて画面を戻します。
+    Navigator.pop(context, true);
   }
 
-  // TimeOfDay を "HH:MM" 形式の文字列に変換する
   String _formatTime(TimeOfDay time) {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m';
   }
 
-  // DateTime を "YYYY/MM/DD" 形式の文字列に変換する
   String _formatDate(DateTime date) {
     final y = date.year.toString();
     final m = date.month.toString().padLeft(2, '0');
@@ -286,13 +331,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 土曜日(6)または日曜日(7)が選択されているか判定
     final bool isWeekend =
         _selectedDate != null &&
         (_selectedDate!.weekday == DateTime.saturday ||
             _selectedDate!.weekday == DateTime.sunday);
 
-    // 手動入力中、または土日の場合は時限ドロップダウンを無効化（グレーアウト）する
     final bool isPeriodDisabled = _isManualTime || isWeekend;
 
     return Scaffold(
@@ -323,7 +366,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 hintText: '説明を入力（任意）',
                 border: OutlineInputBorder(),
               ),
-              // 繰り返し設定・非通知設定の追加分を1画面に収めるため、説明欄は短縮表示にする
               maxLines: 2,
               minLines: 1,
             ),
@@ -348,13 +390,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   onPressed: () {
                     setState(() => _isRepeatExpanded = !_isRepeatExpanded);
                   },
-                  // 繰り返し設定が登録済みの場合は配色を変え、パネルを開かずとも一目で分かるようにする
                   style: _hasRepeatSettings
                       ? OutlinedButton.styleFrom(
-                          backgroundColor:
-                              Theme.of(context).colorScheme.primaryContainer,
-                          foregroundColor:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
                           side: BorderSide(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -466,7 +509,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                           ],
                         ],
                       ),
-                      // 【修正】手動入力中の警告のみ残し、土日の警告テキストの条件分岐を削除しました
                       if (_isManualTime)
                         const Padding(
                           padding: EdgeInsets.only(top: 4),
@@ -563,15 +605,19 @@ class _AddEventScreenState extends State<AddEventScreen> {
                             )
                           : Row(
                               children: _availableTags.map((tag) {
-                                final isSelected = _selectedTag == tag;
+                                final isSelected = _selectedTags.contains(tag);
                                 return Padding(
                                   padding: const EdgeInsets.only(right: 8),
                                   child: FilterChip(
                                     label: Text(tag),
                                     selected: isSelected,
-                                    onSelected: (_) {
+                                    onSelected: (bool selected) {
                                       setState(() {
-                                        _selectedTag = isSelected ? null : tag;
+                                        if (selected) {
+                                          _selectedTags.add(tag);
+                                        } else {
+                                          _selectedTags.remove(tag);
+                                        }
                                       });
                                     },
                                   ),
