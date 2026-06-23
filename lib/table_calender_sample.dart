@@ -7,12 +7,12 @@ class TableCalendarSample extends StatefulWidget {
     super.key,
     required this.onDayTapped,
     required this.assignments,
-    required this.plainTasks, // ✨ 時限なしタスクを受け取る引数を追加
+    required this.plainTasks, // 時限なしタスクを受け取る引数を追加
   });
 
   final ValueChanged<DateTime> onDayTapped;
   final Map<String, List<String>> assignments;
-  final Map<String, List<Map<String, dynamic>>> plainTasks; // ✨ 型を追加
+  final Map<String, List<Map<String, dynamic>>> plainTasks; // 型を追加
 
   @override
   State<TableCalendarSample> createState() => _TableCalendarSampleState();
@@ -34,7 +34,7 @@ class _TableCalendarSampleState extends State<TableCalendarSample> {
         return isSameDay(_selectedDay, day);
       },
 
-      // ✨ eventLoaderを修正して、両方の予定を合算する
+      // eventLoaderを修正して、両方の予定を合算する
       eventLoader: (day) {
         final dateKey = DateFormat('yyyy-MM-dd').format(day);
 
@@ -62,6 +62,8 @@ class _TableCalendarSampleState extends State<TableCalendarSample> {
         ),
         markersMaxCount: 5,
       ),
+
+      availableGestures: AvailableGestures.horizontalSwipe,
 
       onDaySelected: (selectedDay, focusedDay) {
         setState(() {
