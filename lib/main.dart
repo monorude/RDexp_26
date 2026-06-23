@@ -17,11 +17,41 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+// 起動時に自動削除設定を参照し、期限切れタスクキーを削除する
+void _runAutoDelete(Box box) {
+  final enabled = box.get('auto_delete_enabled', defaultValue: false) as bool;
+  if (!enabled) return;
+
+  const durationDays = {
+    '1ヶ月': 30,
+    '3ヶ月': 90,
+    '6ヶ月': 180,
+    '1年': 365,
+    '2年': 730,
+  };
+
+  final durationKey = box.get('auto_delete_duration', defaultValue: '1ヶ月') as String;
+  final days = durationDays[durationKey] ?? 30;
+  final cutoff = DateTime.now().subtract(Duration(days: days));
+
+  final expiredKeys = box.keys.where((k) {
+    if (k is! String) return false;
+    final dateStr = k.replaceAll(RegExp(r'_(plain|period)$'), '');
+    final date = DateTime.tryParse(dateStr);
+    return date != null && date.isBefore(cutoff);
+  }).toList();
+
+  if (expiredKeys.isNotEmpty) {
+    box.deleteAll(expiredKeys);
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Hive.initFlutter();
-  await Hive.openBox('tasks'); // ← 課題・時間割保存用 Box
+  await Hive.openBox('tasks'); // ← 課題保存用 Box
+  _runAutoDelete(Hive.box('tasks'));
   Hive.registerAdapter(NormalTaskAdapter());
   await Hive.openBox<NormalTask>('normalTasks'); // ← 新しい予定・繰り返し用 Box
 
@@ -49,7 +79,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'hoge'),
+      home: const MyHomePage(title: 'ホーム'),
     );
   }
 }

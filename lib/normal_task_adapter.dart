@@ -43,7 +43,7 @@ class NormalTaskAdapter extends TypeAdapter<NormalTask> {
       ..writeByte(6)
       ..write(obj.repeatInterval)
       ..writeByte(7)
-      ..write(obj.repeatEndType) // ✨ ここを正しい記述に直しました
+      ..write(obj.repeatEndType)
       ..writeByte(8)
       ..write(obj.isMuted);
   }

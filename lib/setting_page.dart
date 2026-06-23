@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'period_time_store.dart';
+
+const String _kAutoDeleteEnabled = 'auto_delete_enabled';
+const String _kAutoDeleteDuration = 'auto_delete_duration';
+
+// バグ報告フォームのURL（プレースホルダー）
+const String _bugReportUrl = 'https://example.com/bug-report';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -31,6 +39,9 @@ class _SettingPageState extends State<SettingPage> {
       _periodCount,
       (i) => PeriodTimeStore.getTime(i + 1),
     );
+    final box = Hive.box('tasks');
+    _autoDeleteEnabled = box.get(_kAutoDeleteEnabled, defaultValue: false) as bool;
+    _autoDeleteDuration = box.get(_kAutoDeleteDuration, defaultValue: '1ヶ月') as String;
   }
 
   Future<void> _pickTime(int periodIndex) async {
@@ -69,7 +80,14 @@ class _SettingPageState extends State<SettingPage> {
     );
 
     if (confirmed == true) {
-      // TODO: 全タスク削除処理
+      final box = Hive.box('tasks');
+      // 日付キー（タスク・マーカー）のみ削除し、時間割・設定キーは残す
+      final taskKeys = box.keys.where((k) {
+        if (k is! String) return false;
+        final dateStr = k.replaceAll(RegExp(r'_(plain|period)$'), '');
+        return DateTime.tryParse(dateStr) != null;
+      }).toList();
+      await box.deleteAll(taskKeys);
     }
   }
 
@@ -106,12 +124,11 @@ class _SettingPageState extends State<SettingPage> {
           const Divider(height: 32),
           _SectionHeader(title: '完了済みタスクの自動削除'),
           SwitchListTile(
-            title: const Text('自動で削除する'),
+            title: const Text('一定期間後に自動で削除する'),
             value: _autoDeleteEnabled,
             onChanged: (value) {
-              setState(() {
-                _autoDeleteEnabled = value;
-              });
+              setState(() => _autoDeleteEnabled = value);
+              Hive.box('tasks').put(_kAutoDeleteEnabled, value);
             },
           ),
           AnimatedCrossFade(
@@ -128,9 +145,8 @@ class _SettingPageState extends State<SettingPage> {
                     .toList(),
                 onChanged: (value) {
                   if (value != null) {
-                    setState(() {
-                      _autoDeleteDuration = value;
-                    });
+                    setState(() => _autoDeleteDuration = value);
+                    Hive.box('tasks').put(_kAutoDeleteDuration, value);
                   }
                 },
               ),
@@ -152,6 +168,35 @@ class _SettingPageState extends State<SettingPage> {
               onPressed: _showClearAllConfirmDialog,
             ),
           ),
+          const Divider(height: 32),
+          _SectionHeader(title: 'サポート'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              icon: const Icon(Icons.bug_report_outlined),
+              label: const Text('バグを報告する'),
+              onPressed: () async {
+                final uri = Uri.parse(_bugReportUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+          ),
+          const Divider(height: 32),
+          _SectionHeader(title: 'バージョン情報'),
+          const ListTile(
+            leading: Icon(Icons.tag),
+            title: Text('バージョン'),
+            trailing: Text('v0.9.1'),
+          ),
+          const ListTile(
+            leading: Text('hoge@2026'),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

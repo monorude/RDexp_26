@@ -15,12 +15,12 @@ class NormalTask extends HiveObject {
   late bool isCompleted;
 
   @HiveField(4)
-  late List<String> tags; // 🔥 String から List<String> に変更し、複数形(tags)に
+  late List<String> tags; //String から List<String> に変更し、複数形(tags)に
 
   @HiveField(5)
   late int collegeTime;
 
-  // 🔥 繰り返し設定・非通知設定のフィールドを追加
+  //繰り返し設定・非通知設定のフィールドを追加
   @HiveField(6)
   String? repeatInterval; // '週' | '隔週' | '月' | null
 
@@ -35,10 +35,10 @@ class NormalTask extends HiveObject {
     required this.description,
     required this.dueDate,
     required this.isCompleted,
-    required this.tags, // 🔥 tags に変更
+    required this.tags, //tags に変更
     required this.collegeTime,
-    this.repeatInterval, // 🔥 追加（任意入力のため required なし）
-    this.repeatEndType, // 🔥 追加（任意入力のため required なし）
-    this.isMuted = false, // 🔥 追加（デフォルトは通知する＝false）
+    this.repeatInterval, // 追加（任意入力のため required なし）
+    this.repeatEndType, // 追加（任意入力のため required なし）
+    this.isMuted = false, // 追加（デフォルトは通知する＝false）
   });
 }

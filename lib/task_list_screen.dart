@@ -154,6 +154,117 @@ class MyTabScreen extends StatelessWidget {
                   final timeStr =
                       '${task.dueDate.hour.toString().padLeft(2, '0')}:${task.dueDate.minute.toString().padLeft(2, '0')}';
 
+void _deleteAllCompletedTasks(Box box) async {
+  final keysToDelete = <String, List<int>>{};
+
+  for (var key in box.keys) {
+    if (key is String && (key.endsWith('_plain') || key.endsWith('_period'))) {
+      final list = box.get(key);
+      if (list is List) {
+        final indices = <int>[];
+        for (int i = 0; i < list.length; i++) {
+          final task = list[i];
+          if (task['isCompleted'] == true) {
+            indices.add(i);
+          }
+        }
+        if (indices.isNotEmpty) {
+          keysToDelete[key] = indices;
+        }
+      }
+    }
+  }
+
+  for (var entry in keysToDelete.entries) {
+    final key = entry.key;
+    final indices = entry.value;
+
+    final list = (box.get(key) as List)
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    indices.sort((a, b) => b.compareTo(a));
+    for (var i in indices) {
+      list.removeAt(i);
+    }
+
+    if (list.isEmpty) {
+      await box.delete(key);
+    } else {
+      await box.put(key, list);
+    }
+
+    if (key.endsWith('_period')) {
+      final dateKey = key.replaceAll('_period', '');
+      final assign = box.get(dateKey, defaultValue: List.filled(5, ''));
+
+      final remaining = list.map((e) => e['periodIndex']).toList();
+
+      for (int p = 0; p < assign.length; p++) {
+        if (!remaining.contains(p)) {
+          assign[p] = '';
+        }
+      }
+
+      await box.put(dateKey, assign);
+    }
+  }
+}
+
+if (isCompletedFilter) {
+  return Column(
+    children: [
+      Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: ElevatedButton.icon(
+          icon: const Icon(Icons.delete_forever),
+          label: const Text('完了済みタスクをすべて削除'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.redAccent,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () async {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('一括削除'),
+                content: const Text('完了済みタスクをすべて削除しますか？'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('キャンセル'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text(
+                      '削除',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+            if (confirm == true) {
+              _deleteAllCompletedTasks(box);
+            }
+          },
+        ),
+      ),
+
+      // ★ 完了済みタブでも個別削除・チェック操作を使う
+      Expanded(
+        child: _buildTaskListView(filteredTasks),
+      ),
+    ],
+  );
+}
+
+
+
+      
+        // 日付順に並び替え
+        filteredTasks.sort((a, b) => a.dateKey.compareTo(b.dateKey));
                   // 表示上のレイアウトを共通化するため擬似的な Map 構造を作成
                   final taskMap = {
                     'text': task.title,
@@ -429,7 +540,132 @@ class MyTabScreen extends StatelessWidget {
   }
 }
 
-// データの内部管理用クラスを拡張
+Widget _buildTaskListView(List<_TaskItem> filteredTasks) {
+  return ListView.builder(
+    itemCount: filteredTasks.length,
+    itemBuilder: (context, index) {
+      final item = filteredTasks[index];
+      final task = item.taskData;
+      final title = task['text'] ?? '';
+      final isCompleted = task['isCompleted'] ?? false;
+
+      String subtitle = item.dateKey;
+      if (item.type == 'plain') {
+        subtitle += ' (${task['time']})';
+      } else {
+        subtitle += ' (${(task['periodIndex'] as int) + 1}限)';
+      }
+
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: ListTile(
+          title: Text(
+            title,
+            style: TextStyle(
+              decoration: isCompleted ? TextDecoration.lineThrough : null,
+              color: isCompleted ? Colors.grey : Colors.black87,
+            ),
+          ),
+          subtitle: Text(subtitle),
+
+          // ★ 完了⇄未完了の切り替え（チェックボックス）
+          leading: Checkbox(
+            value: isCompleted,
+            onChanged: (bool? value) async {
+              if (value != null) {
+                final box = Hive.box('tasks');
+                final boxKey = '${item.dateKey}_${item.type}';
+                final List? savedData = box.get(boxKey);
+
+                if (savedData != null) {
+                  final list = savedData
+                      .map((e) => Map<String, dynamic>.from(e))
+                      .toList();
+
+                  list[item.index]['isCompleted'] = value;
+                  await box.put(boxKey, list);
+                }
+              }
+            },
+          ),
+
+          // ★ 個別削除ボタン
+          trailing: IconButton(
+            icon: const Icon(
+              Icons.delete_outline,
+              color: Colors.redAccent,
+            ),
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('タスクの削除'),
+                  content: Text('「$title」を削除しますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text(
+                        '削除',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                final box = Hive.box('tasks');
+                final boxKey = '${item.dateKey}_${item.type}';
+                final List? savedData = box.get(boxKey);
+
+                if (savedData != null) {
+                  final list = savedData
+                      .map((e) => Map<String, dynamic>.from(e))
+                      .toList();
+
+                  list.removeAt(item.index);
+
+                  if (list.isEmpty) {
+                    await box.delete(boxKey);
+                  } else {
+                    await box.put(boxKey, list);
+                  }
+
+                  // period の場合は assignments の更新も必要
+                  if (item.type == 'period') {
+                    final periodIndex = task['periodIndex'] as int? ?? -1;
+                    bool hasMoreTasks = list.any(
+                      (t) => t['periodIndex'] == periodIndex,
+                    );
+
+                    if (!hasMoreTasks) {
+                      final List? assignList = box.get(item.dateKey);
+                      if (assignList != null) {
+                        final currentAssign = List<String>.from(assignList);
+                        if (periodIndex >= 0 &&
+                            periodIndex < currentAssign.length) {
+                          currentAssign[periodIndex] = '';
+                          await box.put(item.dateKey, currentAssign);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+          ),
+        ),
+      );
+    },
+  );
+}
+
+
+
 class _TaskItem {
   final String dateKey;
   final String type;
