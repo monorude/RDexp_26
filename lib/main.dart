@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -52,7 +53,7 @@ void main() async {
   await Hive.openBox('tasks'); // ← 課題保存用 Box
   _runAutoDelete(Hive.box('tasks'));
   Hive.registerAdapter(NormalTaskAdapter());
-  await Hive.openBox<NormalTask>('normalTasks');
+  await Hive.openBox<NormalTask>('normalTasks'); // ← 新しい予定・繰り返し用 Box
 
   // タイムゾーン初期化
   tz.initializeTimeZones();
@@ -61,7 +62,6 @@ void main() async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const ios = DarwinInitializationSettings();
-
   const initSettings = InitializationSettings(android: android, iOS: ios);
   await flutterLocalNotificationsPlugin.initialize(initSettings);
 
@@ -133,6 +133,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
+  bool _isFabExpanded = false;
   int _notificationId = 0;
 
   Future<void> scheduleNotification({
@@ -162,15 +163,17 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // 従来のMap形式で保存するための古いメソッド（互換性のために維持）
   void _addNewAssignment(
     String dateKey,
     int? periodIndex,
     String text,
     TimeOfDay? time,
     String subjectName,
+    String description,
+    String tag,
   ) async {
     final box = Hive.box('tasks');
-
     if (periodIndex != null && periodIndex != -1) {
       setState(() {
         if (!periodTasks.containsKey(dateKey)) {
@@ -180,6 +183,8 @@ class _MyHomePageState extends State<MyHomePage> {
           'text': text,
           'isCompleted': false,
           'periodIndex': periodIndex,
+          'description': description,
+          'tag': tag,
         });
 
         if (!assignments.containsKey(dateKey)) {
@@ -187,14 +192,12 @@ class _MyHomePageState extends State<MyHomePage> {
         }
         assignments[dateKey]![periodIndex] = 'has_task';
       });
-
       await box.put('${dateKey}_period', periodTasks[dateKey]);
       await box.put(dateKey, assignments[dateKey]);
     } else {
       final String timeStr = time != null
           ? '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'
           : '時刻未設定';
-
       setState(() {
         if (!plainTasks.containsKey(dateKey)) {
           plainTasks[dateKey] = [];
@@ -203,6 +206,8 @@ class _MyHomePageState extends State<MyHomePage> {
           'time': timeStr,
           'text': text,
           'isCompleted': false,
+          'description': description,
+          'tag': tag,
         });
       });
 
@@ -218,7 +223,6 @@ class _MyHomePageState extends State<MyHomePage> {
         time.hour,
         time.minute,
       );
-
       if (notifyDate.isAfter(DateTime.now())) {
         scheduleNotification(
           dateTime: notifyDate,
@@ -236,11 +240,9 @@ class _MyHomePageState extends State<MyHomePage> {
   final List<String> days = ['月', '火', '水', '木', '金'];
   final List<String> periods = ['1', '2', '3', '4', '5'];
 
-  // 前期と後期の時間割データ
   late List<List<String>> timetable1;
   late List<List<String>> timetable2;
 
-  // それぞれの時間割の期限（開始日・終了日）
   DateTime? semester1Start;
   DateTime? semester1End;
   DateTime? semester2Start;
@@ -253,7 +255,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   List<List<String>>? _getTimetableForDate(DateTime date) {
     final target = DateTime(date.year, date.month, date.day);
-
     if (semester1Start != null && semester1End != null) {
       final start = DateTime(
         semester1Start!.year,
@@ -291,10 +292,8 @@ class _MyHomePageState extends State<MyHomePage> {
     return null;
   }
 
-  // 日付から所属する期の名前を取得する（UI表示用）
   String _getSemesterNameForDate(DateTime date) {
     final target = DateTime(date.year, date.month, date.day);
-
     if (semester1Start != null && semester1End != null) {
       final start = DateTime(
         semester1Start!.year,
@@ -335,14 +334,103 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _loadTasksFromHive(); // 初期化時にHiveからデータを読み込む
+    _loadTasksFromHive();
   }
 
-  // ★追加：Hiveからタスクデータを最新状態に再読み込みする関数
+  // ★修正：従来のデータと、新画面から保存された NormalTask モデルデータの両方を読み込んで統合する
   void _loadTasksFromHive() {
+    List<Map<String, dynamic>> _getTodayTasks() {
+      final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+      List<Map<String, dynamic>> tasks = [];
+
+      if (periodTasks.containsKey(todayKey)) {
+        tasks.addAll(periodTasks[todayKey]!);
+      }
+
+      if (plainTasks.containsKey(todayKey)) {
+        tasks.addAll(plainTasks[todayKey]!);
+      }
+
+      // 未完了を上に
+      tasks.sort((a, b) {
+        final aDone = a['isCompleted'] as bool? ?? false;
+        final bDone = b['isCompleted'] as bool? ?? false;
+
+        if (aDone == bDone) return 0;
+        return aDone ? 1 : -1;
+      });
+
+      return tasks;
+    }
+
+    Widget _buildTodayTodoWidget() {
+      final todayTasks = _getTodayTasks();
+
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.check_circle_outline, color: Colors.deepPurple),
+                SizedBox(width: 8),
+                Text(
+                  '今日のToDo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            if (todayTasks.isEmpty)
+              const Text('今日の予定はありません', style: TextStyle(color: Colors.grey))
+            else
+              ...todayTasks.take(5).map((task) {
+                final completed = task['isCompleted'] as bool? ?? false;
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Icon(
+                        completed
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color: completed ? Colors.green : Colors.redAccent,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          task['text'] ?? '',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: completed ? Colors.grey : Colors.black,
+                            decoration: completed
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      );
+    }
+
     final box = Hive.box('tasks');
 
-    // 前期・後期の時間割データをそれぞれHiveから読み込み
     final savedTt1 = box.get('timetable1');
     if (savedTt1 is List) {
       timetable1 = savedTt1
@@ -367,7 +455,6 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     }
 
-    // 前期・後期の期限データを読み込み
     final s1StartStr = box.get('sem1_start');
     final s1EndStr = box.get('sem1_end');
     if (s1StartStr != null) semester1Start = DateTime.parse(s1StartStr);
@@ -378,12 +465,11 @@ class _MyHomePageState extends State<MyHomePage> {
     if (s2StartStr != null) semester2Start = DateTime.parse(s2StartStr);
     if (s2EndStr != null) semester2End = DateTime.parse(s2EndStr);
 
-    // 再読み込み時の重複を防ぐために一度クリアする
     plainTasks.clear();
     periodTasks.clear();
     assignments.clear();
 
-    // タスクデータの読み込み
+    // 1. 従来の 'tasks' ボックスから Map 形式データを読み込む
     for (var key in box.keys) {
       if (key is String) {
         if (key.endsWith('_plain')) {
@@ -406,7 +492,44 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
-    // カレンダーマーカーの同期
+    // 2. 新しい 'normalTasks' ボックスから NormalTask モデルデータを読み込んで統合
+    final normalTasksBox = Hive.box<NormalTask>('normalTasks');
+    for (var i = 0; i < normalTasksBox.length; i++) {
+      final task = normalTasksBox.getAt(i);
+      if (task != null) {
+        final dateKey = DateFormat('yyyy-MM-dd').format(task.dueDate);
+        final timeStr =
+            '${task.dueDate.hour.toString().padLeft(2, '0')}:${task.dueDate.minute.toString().padLeft(2, '0')}';
+
+        // 既存の表示ロジックに適合するように Map 構造にマッピング
+        final taskMap = {
+          'hiveKey': normalTasksBox.keyAt(i), // 削除や編集用のキー
+          'isNormalTaskModel': true, // 新モデル判別フラグ
+          'text': task.title,
+          'time': timeStr,
+          'isCompleted': task.isCompleted,
+          'description': task.description,
+          'tag': task.tags.isNotEmpty ? task.tags.join(', ') : '',
+          'periodIndex': task.collegeTime > 0
+              ? task.collegeTime - 1
+              : -1, // 1〜5限を0〜4のindexに変換
+        };
+
+        if (task.collegeTime > 0) {
+          if (!periodTasks.containsKey(dateKey)) {
+            periodTasks[dateKey] = [];
+          }
+          periodTasks[dateKey]!.add(taskMap);
+        } else {
+          if (!plainTasks.containsKey(dateKey)) {
+            plainTasks[dateKey] = [];
+          }
+          plainTasks[dateKey]!.add(taskMap);
+        }
+      }
+    }
+
+    // assignments カレンダーマークを構築
     periodTasks.forEach((dateKey, tasks) {
       if (!assignments.containsKey(dateKey)) {
         assignments[dateKey] = List.generate(periods.length, (_) => '');
@@ -418,8 +541,21 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
     });
+    setState(() {});
+  }
 
-    setState(() {}); // 読み込み後に画面を再描画する
+  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        elevation: 6,
+      ),
+      child: Text(label),
+    );
   }
 
   @override
@@ -435,7 +571,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     final List<Widget> _tabs = [
-      // 【タブ1: ホーム（カレンダーと日課表示）】
       Column(
         children: [
           Center(
@@ -462,7 +597,12 @@ class _MyHomePageState extends State<MyHomePage> {
             child: SingleChildScrollView(
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.only(
+                  top: 12.0,
+                  left: 12.0,
+                  right: 12.0,
+                  bottom: 90.0,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade50,
                   border: Border(top: BorderSide(color: Colors.grey.shade300)),
@@ -521,6 +661,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                               periodIndex,
                                         )
                                         .toList();
+
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 8.0,
@@ -583,6 +724,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                                   task['isCompleted']
                                                       as bool? ??
                                                   false;
+
                                               return Padding(
                                                 padding:
                                                     const EdgeInsets.symmetric(
@@ -593,26 +735,50 @@ class _MyHomePageState extends State<MyHomePage> {
                                                     Checkbox(
                                                       value: isCompleted,
                                                       onChanged: (bool? value) async {
-                                                        final box = Hive.box(
-                                                          'tasks',
-                                                        );
-                                                        setState(() {
-                                                          final updatedTask =
-                                                              Map<
-                                                                String,
-                                                                dynamic
-                                                              >.from(
-                                                                periodTasks[dateKey]![globalIndex],
+                                                        // ★修正：モデルデータ型か古いデータ型かで更新ロジックを切り替える
+                                                        if (task['isNormalTaskModel'] ==
+                                                            true) {
+                                                          final normalBox =
+                                                              Hive.box<
+                                                                NormalTask
+                                                              >('normalTasks');
+                                                          final originalTask =
+                                                              normalBox.get(
+                                                                task['hiveKey'],
                                                               );
-                                                          updatedTask['isCompleted'] =
-                                                              value ?? false;
-                                                          periodTasks[dateKey]![globalIndex] =
-                                                              updatedTask;
-                                                        });
-                                                        await box.put(
-                                                          '${dateKey}_period',
-                                                          periodTasks[dateKey],
-                                                        );
+                                                          if (originalTask !=
+                                                              null) {
+                                                            originalTask
+                                                                    .isCompleted =
+                                                                value ?? false;
+                                                            await normalBox.put(
+                                                              task['hiveKey'],
+                                                              originalTask,
+                                                            );
+                                                          }
+                                                          _loadTasksFromHive(); // リロード
+                                                        } else {
+                                                          final box = Hive.box(
+                                                            'tasks',
+                                                          );
+                                                          setState(() {
+                                                            final updatedTask =
+                                                                Map<
+                                                                  String,
+                                                                  dynamic
+                                                                >.from(
+                                                                  periodTasks[dateKey]![globalIndex],
+                                                                );
+                                                            updatedTask['isCompleted'] =
+                                                                value ?? false;
+                                                            periodTasks[dateKey]![globalIndex] =
+                                                                updatedTask;
+                                                          });
+                                                          await box.put(
+                                                            '${dateKey}_period',
+                                                            periodTasks[dateKey],
+                                                          );
+                                                        }
                                                       },
                                                     ),
                                                     Expanded(
@@ -641,33 +807,47 @@ class _MyHomePageState extends State<MyHomePage> {
                                                         size: 20,
                                                       ),
                                                       onPressed: () async {
-                                                        final box = Hive.box(
-                                                          'tasks',
-                                                        );
-                                                        setState(() {
-                                                          periodTasks[dateKey]!
-                                                              .removeAt(
-                                                                globalIndex,
+                                                        // ★修正：モデルデータ型か古いデータ型かで削除ロジックを切り替える
+                                                        if (task['isNormalTaskModel'] ==
+                                                            true) {
+                                                          final normalBox =
+                                                              Hive.box<
+                                                                NormalTask
+                                                              >('normalTasks');
+                                                          await normalBox
+                                                              .delete(
+                                                                task['hiveKey'],
                                                               );
-                                                          final hasMoreTasks =
-                                                              periodTasks[dateKey]!.any(
-                                                                (t) =>
-                                                                    t['periodIndex'] ==
-                                                                    periodIndex,
-                                                              );
-                                                          if (!hasMoreTasks) {
-                                                            assignments[dateKey]![periodIndex] =
-                                                                '';
-                                                          }
-                                                        });
-                                                        await box.put(
-                                                          '${dateKey}_period',
-                                                          periodTasks[dateKey],
-                                                        );
-                                                        await box.put(
-                                                          dateKey,
-                                                          assignments[dateKey],
-                                                        );
+                                                          _loadTasksFromHive();
+                                                        } else {
+                                                          final box = Hive.box(
+                                                            'tasks',
+                                                          );
+                                                          setState(() {
+                                                            periodTasks[dateKey]!
+                                                                .removeAt(
+                                                                  globalIndex,
+                                                                );
+                                                            final hasMoreTasks =
+                                                                periodTasks[dateKey]!.any(
+                                                                  (t) =>
+                                                                      t['periodIndex'] ==
+                                                                      periodIndex,
+                                                                );
+                                                            if (!hasMoreTasks) {
+                                                              assignments[dateKey]![periodIndex] =
+                                                                  '';
+                                                            }
+                                                          });
+                                                          await box.put(
+                                                            '${dateKey}_period',
+                                                            periodTasks[dateKey],
+                                                          );
+                                                          await box.put(
+                                                            dateKey,
+                                                            assignments[dateKey],
+                                                          );
+                                                        }
                                                       },
                                                     ),
                                                   ],
@@ -691,7 +871,6 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           ],
 
-                          // その他の予定・タスクは曜日・期間を問わず独立して表示
                           if ((plainTasks[dateKey] ?? []).isNotEmpty) ...[
                             const SizedBox(height: 16),
                             const Divider(color: Colors.grey),
@@ -722,21 +901,41 @@ class _MyHomePageState extends State<MyHomePage> {
                                     Checkbox(
                                       value: isCompleted,
                                       onChanged: (bool? value) async {
-                                        final box = Hive.box('tasks');
-                                        setState(() {
-                                          final updatedTask =
-                                              Map<String, dynamic>.from(
-                                                plainTasks[dateKey]![index],
+                                        // ★修正：モデルデータ型か古いデータ型かで更新ロジックを切り替える
+                                        if (task['isNormalTaskModel'] == true) {
+                                          final normalBox =
+                                              Hive.box<NormalTask>(
+                                                'normalTasks',
                                               );
-                                          updatedTask['isCompleted'] =
-                                              value ?? false;
-                                          plainTasks[dateKey]![index] =
-                                              updatedTask;
-                                        });
-                                        await box.put(
-                                          '${dateKey}_plain',
-                                          plainTasks[dateKey],
-                                        );
+                                          final originalTask = normalBox.get(
+                                            task['hiveKey'],
+                                          );
+                                          if (originalTask != null) {
+                                            originalTask.isCompleted =
+                                                value ?? false;
+                                            await normalBox.put(
+                                              task['hiveKey'],
+                                              originalTask,
+                                            );
+                                          }
+                                          _loadTasksFromHive();
+                                        } else {
+                                          final box = Hive.box('tasks');
+                                          setState(() {
+                                            final updatedTask =
+                                                Map<String, dynamic>.from(
+                                                  plainTasks[dateKey]![index],
+                                                );
+                                            updatedTask['isCompleted'] =
+                                                value ?? false;
+                                            plainTasks[dateKey]![index] =
+                                                updatedTask;
+                                          });
+                                          await box.put(
+                                            '${dateKey}_plain',
+                                            plainTasks[dateKey],
+                                          );
+                                        }
                                       },
                                     ),
                                     Container(
@@ -787,14 +986,28 @@ class _MyHomePageState extends State<MyHomePage> {
                                         size: 20,
                                       ),
                                       onPressed: () async {
-                                        final box = Hive.box('tasks');
-                                        setState(() {
-                                          plainTasks[dateKey]!.removeAt(index);
-                                        });
-                                        await box.put(
-                                          '${dateKey}_plain',
-                                          plainTasks[dateKey],
-                                        );
+                                        // ★修正：モデルデータ型か古いデータ型かで削除ロジックを切り替える
+                                        if (task['isNormalTaskModel'] == true) {
+                                          final normalBox =
+                                              Hive.box<NormalTask>(
+                                                'normalTasks',
+                                              );
+                                          await normalBox.delete(
+                                            task['hiveKey'],
+                                          );
+                                          _loadTasksFromHive();
+                                        } else {
+                                          final box = Hive.box('tasks');
+                                          setState(() {
+                                            plainTasks[dateKey]!.removeAt(
+                                              index,
+                                            );
+                                          });
+                                          await box.put(
+                                            '${dateKey}_plain',
+                                            plainTasks[dateKey],
+                                          );
+                                        }
                                       },
                                     ),
                                   ],
@@ -810,7 +1023,6 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
 
-      // 【タブ2: 時間割設定画面】
       TimetableScreen(
         timetable1: timetable1,
         timetable2: timetable2,
@@ -848,7 +1060,6 @@ class _MyHomePageState extends State<MyHomePage> {
         },
       ),
 
-      // タブ3: タスク一覧画面
       const MyTabScreen(),
     ];
 
@@ -891,44 +1102,58 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
       ),
-      body: IndexedStack(index: _currentIndex, children: _tabs),
+      body: Stack(
+        children: [
+          IndexedStack(index: _currentIndex, children: _tabs),
+          if (_isFabExpanded) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isFabExpanded = false),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildFabMenuItem('繰り返し予定を追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('予定を追加する', () async {
+                    setState(() => _isFabExpanded = false);
+
+                    // ★修正：AddEventScreen は登録完了時に true を返す
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                    );
+
+                    // true が戻ってきたらデータが新しく追加されたので画面をリロードする
+                    if (result == true) {
+                      _loadTasksFromHive();
+                    }
+                  }),
+                  const SizedBox(height: 12),
+                  _buildFabMenuItem('タスクを追加する', () {
+                    setState(() => _isFabExpanded = false);
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AddEventScreen()),
-                );
-                if (result != null && result is Map<String, dynamic>) {
-                  final text = result['text'] as String;
-                  final periodIndex = result['periodIndex'] as int?;
-                  final time = result['time'] as TimeOfDay?;
-                  final DateTime selectedDate = result['date'] as DateTime;
-                  final String targetDateKey = DateFormat(
-                    'yyyy-MM-dd',
-                  ).format(selectedDate);
-                  int weekdayIndex = selectedDate.weekday - 1;
-                  if (weekdayIndex > 4) weekdayIndex = 0;
-                  final currentTimetable = _getTimetableForDate(
-                    selectedDate,
-                  );
-                  final subject =
-                      (periodIndex != null &&
-                          periodIndex != -1 &&
-                          currentTimetable != null)
-                      ? currentTimetable[periodIndex][weekdayIndex]
-                      : '';
-                  _addNewAssignment(
-                    targetDateKey,
-                    periodIndex,
-                    text,
-                    time,
-                    subject,
-                  );
-                }
-              },
-              tooltip: '予定を追加する',
-              child: const Icon(Icons.add),
+              onPressed: () => setState(() => _isFabExpanded = !_isFabExpanded),
+              tooltip: 'メニューを開く',
+              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
             )
           : null,
       bottomNavigationBar: BottomNavigationBar(
@@ -936,8 +1161,8 @@ class _MyHomePageState extends State<MyHomePage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
+            _isFabExpanded = false;
           });
-          // ★修正：ホームタブ（0番目）に戻ったとき、Hiveデータを再ロードしてカレンダー側を最新に同期する
           if (index == 0) {
             _loadTasksFromHive();
           }
