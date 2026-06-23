@@ -214,8 +214,12 @@ class MyTabScreen extends StatelessWidget {
                 // 日付部分のテキスト作成
                 String dateLine = item.dateKey;
                 if (item.type == 'plain') {
-                  final time = task['time'] as String? ?? '時刻未設定';
-                  dateLine += ' ($time)';
+                  final time = task['time'] as String? ?? '';
+
+                  // ★修正：時刻が有効な場合（空でなく、00:00でもなく、時刻未設定でもない）のみ表示
+                  if (time.isNotEmpty && time != '00:00' && time != '時刻未設定') {
+                    dateLine += ' ($time)';
+                  }
                 } else if (item.type == 'period') {
                   final periodIndex = task['periodIndex'] as int? ?? -1;
                   if (periodIndex != -1) {
