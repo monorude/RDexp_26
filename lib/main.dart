@@ -22,15 +22,10 @@ void _runAutoDelete(Box box) {
   final enabled = box.get('auto_delete_enabled', defaultValue: false) as bool;
   if (!enabled) return;
 
-  const durationDays = {
-    '1ヶ月': 30,
-    '3ヶ月': 90,
-    '6ヶ月': 180,
-    '1年': 365,
-    '2年': 730,
-  };
+  const durationDays = {'1ヶ月': 30, '3ヶ月': 90, '6ヶ月': 180, '1年': 365, '2年': 730};
 
-  final durationKey = box.get('auto_delete_duration', defaultValue: '1ヶ月') as String;
+  final durationKey =
+      box.get('auto_delete_duration', defaultValue: '1ヶ月') as String;
   final days = durationDays[durationKey] ?? 30;
   final cutoff = DateTime.now().subtract(Duration(days: days));
 
@@ -76,6 +71,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Home',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -499,7 +495,7 @@ class _MyHomePageState extends State<MyHomePage> {
               padding: EdgeInsets.symmetric(vertical: 8.0),
               child: Center(
                 child: Text(
-                  '今日の予定はありません 🎉',
+                  '今日の予定はありません',
                   style: TextStyle(fontSize: 13, color: Colors.grey),
                 ),
               ),

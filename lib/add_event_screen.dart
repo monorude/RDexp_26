@@ -199,12 +199,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
     return null;
   }
 
-  // 繰り返し期限（EndType）から具体的な最終終了日を計算するヘルパー
+  // 🛠 変更箇所：繰り返し期限（EndType）から具体的な最終終了日を計算するヘルパー
   DateTime _calculateEndDate(DateTime startDate, String? endType) {
     if (endType == null) {
       // 期限の指定がない場合は、暫定的に開始日の3ヶ月後を期限にする（無限ループ防止）
       return startDate.add(const Duration(days: 90));
     }
+
+    // 時間割や期間が保存されているHive Boxを開く
+    final taskBox = Hive.box('tasks');
 
     switch (endType) {
       case '月':
@@ -212,13 +215,31 @@ class _AddEventScreenState extends State<AddEventScreen> {
       case '年':
         return DateTime(startDate.year + 1, startDate.month, startDate.day);
       case '前期':
+        final savedSem1End = taskBox.get('sem1_end');
+        if (savedSem1End != null) {
+          // 保存形式が String の場合はパースし、DateTime の場合はそのまま利用する
+          return savedSem1End is DateTime
+              ? savedSem1End
+              : DateTime.parse(savedSem1End.toString());
+        }
+        // 設定データがない場合のフォールバック（元のロジック）
         int targetYear = startDate.year;
         if (startDate.month >= 10) targetYear += 1;
         return DateTime(targetYear, 9, 30, 23, 59);
+
       case '後期':
+        final savedSem2End = taskBox.get('sem2_end');
+        if (savedSem2End != null) {
+          // 保存形式が String の場合はパースし、DateTime の場合はそのまま利用する
+          return savedSem2End is DateTime
+              ? savedSem2End
+              : DateTime.parse(savedSem2End.toString());
+        }
+        // 設定データがない場合のフォールバック（元のロジック）
         int targetYear = startDate.year;
         if (startDate.month >= 4) targetYear += 1;
         return DateTime(targetYear, 3, 31, 23, 59);
+
       default:
         return startDate;
     }
