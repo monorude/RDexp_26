@@ -22,15 +22,10 @@ void _runAutoDelete(Box box) {
   final enabled = box.get('auto_delete_enabled', defaultValue: false) as bool;
   if (!enabled) return;
 
-  const durationDays = {
-    '1ヶ月': 30,
-    '3ヶ月': 90,
-    '6ヶ月': 180,
-    '1年': 365,
-    '2年': 730,
-  };
+  const durationDays = {'1ヶ月': 30, '3ヶ月': 90, '6ヶ月': 180, '1年': 365, '2年': 730};
 
-  final durationKey = box.get('auto_delete_duration', defaultValue: '1ヶ月') as String;
+  final durationKey =
+      box.get('auto_delete_duration', defaultValue: '1ヶ月') as String;
   final days = durationDays[durationKey] ?? 30;
   final cutoff = DateTime.now().subtract(Duration(days: days));
 
@@ -76,6 +71,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Home',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -337,98 +333,8 @@ class _MyHomePageState extends State<MyHomePage> {
     _loadTasksFromHive();
   }
 
-  // ★修正：従来のデータと、新画面から保存された NormalTask モデルデータの両方を読み込んで統合する
+  // ★修正：従来のデータと新モデルデータを統合する関数（中にあったウィジェット関数は外に出しました）
   void _loadTasksFromHive() {
-    List<Map<String, dynamic>> _getTodayTasks() {
-      final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-      List<Map<String, dynamic>> tasks = [];
-
-      if (periodTasks.containsKey(todayKey)) {
-        tasks.addAll(periodTasks[todayKey]!);
-      }
-
-      if (plainTasks.containsKey(todayKey)) {
-        tasks.addAll(plainTasks[todayKey]!);
-      }
-
-      // 未完了を上に
-      tasks.sort((a, b) {
-        final aDone = a['isCompleted'] as bool? ?? false;
-        final bDone = b['isCompleted'] as bool? ?? false;
-
-        if (aDone == bDone) return 0;
-        return aDone ? 1 : -1;
-      });
-
-      return tasks;
-    }
-
-    Widget _buildTodayTodoWidget() {
-      final todayTasks = _getTodayTasks();
-
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: Colors.deepPurple),
-                SizedBox(width: 8),
-                Text(
-                  '今日のToDo',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            if (todayTasks.isEmpty)
-              const Text('今日の予定はありません', style: TextStyle(color: Colors.grey))
-            else
-              ...todayTasks.take(5).map((task) {
-                final completed = task['isCompleted'] as bool? ?? false;
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Icon(
-                        completed
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        color: completed ? Colors.green : Colors.redAccent,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          task['text'] ?? '',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: completed ? Colors.grey : Colors.black,
-                            decoration: completed
-                                ? TextDecoration.lineThrough
-                                : null,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      );
-    }
-
     final box = Hive.box('tasks');
 
     final savedTt1 = box.get('timetable1');
@@ -501,18 +407,15 @@ class _MyHomePageState extends State<MyHomePage> {
         final timeStr =
             '${task.dueDate.hour.toString().padLeft(2, '0')}:${task.dueDate.minute.toString().padLeft(2, '0')}';
 
-        // 既存の表示ロジックに適合するように Map 構造にマッピング
         final taskMap = {
-          'hiveKey': normalTasksBox.keyAt(i), // 削除や編集用のキー
-          'isNormalTaskModel': true, // 新モデル判別フラグ
+          'hiveKey': normalTasksBox.keyAt(i),
+          'isNormalTaskModel': true,
           'text': task.title,
           'time': timeStr,
           'isCompleted': task.isCompleted,
           'description': task.description,
           'tag': task.tags.isNotEmpty ? task.tags.join(', ') : '',
-          'periodIndex': task.collegeTime > 0
-              ? task.collegeTime - 1
-              : -1, // 1〜5限を0〜4のindexに変換
+          'periodIndex': task.collegeTime > 0 ? task.collegeTime - 1 : -1,
         };
 
         if (task.collegeTime > 0) {
@@ -542,6 +445,216 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     });
     setState(() {});
+  }
+
+  // ★ カレンダーの上に表示する「今日のToDoリスト」ウィジェット
+  Widget _buildTodayTodoWidget() {
+    final today = DateTime.now();
+    final String todayKey = DateFormat('yyyy-MM-dd').format(today);
+
+    final allTodayPeriodTasks = periodTasks[todayKey] ?? [];
+    final allTodayPlainTasks = plainTasks[todayKey] ?? [];
+
+    final bool hasNoTasks =
+        allTodayPeriodTasks.isEmpty && allTodayPlainTasks.isEmpty;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(maxHeight: 160),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.deepPurple.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.check_circle_outline,
+                color: Colors.deepPurple,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '今日のToDoリスト (${DateFormat('M/d', 'ja').format(today)})',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepPurple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (hasNoTasks)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8.0),
+              child: Center(
+                child: Text(
+                  '今日の予定はありません',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 1. 今日の時間割タスク
+                    ...allTodayPeriodTasks.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final task = entry.value;
+                      final isCompleted = task['isCompleted'] as bool? ?? false;
+                      final pIdx = task['periodIndex'] as int? ?? -1;
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Checkbox(
+                                value: isCompleted,
+                                onChanged: (bool? value) async {
+                                  if (task['isNormalTaskModel'] == true) {
+                                    final normalBox = Hive.box<NormalTask>(
+                                      'normalTasks',
+                                    );
+                                    final originalTask = normalBox.get(
+                                      task['hiveKey'],
+                                    );
+                                    if (originalTask != null) {
+                                      originalTask.isCompleted = value ?? false;
+                                      await normalBox.put(
+                                        task['hiveKey'],
+                                        originalTask,
+                                      );
+                                    }
+                                  } else {
+                                    final box = Hive.box('tasks');
+                                    final updated = Map<String, dynamic>.from(
+                                      allTodayPeriodTasks[idx],
+                                    );
+                                    updated['isCompleted'] = value ?? false;
+                                    periodTasks[todayKey]![idx] = updated;
+                                    await box.put(
+                                      '${todayKey}_period',
+                                      periodTasks[todayKey],
+                                    );
+                                  }
+                                  _loadTasksFromHive();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                (pIdx != -1 ? '[${pIdx + 1}限] ' : '') +
+                                    (task['text'] ?? ''),
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isCompleted
+                                      ? Colors.grey
+                                      : Colors.black87,
+                                  decoration: isCompleted
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    // 2. 今日のその他のタスク
+                    ...allTodayPlainTasks.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final task = entry.value;
+                      final isCompleted = task['isCompleted'] as bool? ?? false;
+
+                      // ★ 修正：00:00 や 時刻未設定 なら表示しないように判定
+                      final timeStr = task['time'] as String? ?? '';
+                      final hasTime =
+                          timeStr.isNotEmpty &&
+                          timeStr != '00:00' &&
+                          timeStr != '時刻未設定';
+                      final displayPrefix = hasTime ? '[$timeStr] ' : '';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Checkbox(
+                                value: isCompleted,
+                                onChanged: (bool? value) async {
+                                  if (task['isNormalTaskModel'] == true) {
+                                    final normalBox = Hive.box<NormalTask>(
+                                      'normalTasks',
+                                    );
+                                    final originalTask = normalBox.get(
+                                      task['hiveKey'],
+                                    );
+                                    if (originalTask != null) {
+                                      originalTask.isCompleted = value ?? false;
+                                      await normalBox.put(
+                                        task['hiveKey'],
+                                        originalTask,
+                                      );
+                                    }
+                                  } else {
+                                    final box = Hive.box('tasks');
+                                    final updated = Map<String, dynamic>.from(
+                                      allTodayPlainTasks[idx],
+                                    );
+                                    updated['isCompleted'] = value ?? false;
+                                    plainTasks[todayKey]![idx] = updated;
+                                    await box.put(
+                                      '${todayKey}_plain',
+                                      plainTasks[todayKey],
+                                    );
+                                  }
+                                  _loadTasksFromHive();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                displayPrefix + (task['text'] ?? ''),
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isCompleted
+                                      ? Colors.grey
+                                      : Colors.black87,
+                                  decoration: isCompleted
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
@@ -584,6 +697,10 @@ class _MyHomePageState extends State<MyHomePage> {
               child: ClockTimer(),
             ),
           ),
+
+          // ★ カレンダーの上に今日のToDoリストを配置
+          _buildTodayTodoWidget(),
+
           TableCalendarSample(
             onDayTapped: (selectedDay) {
               setState(() {
@@ -661,7 +778,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                               periodIndex,
                                         )
                                         .toList();
-
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 8.0,
@@ -724,7 +840,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                                   task['isCompleted']
                                                       as bool? ??
                                                   false;
-
                                               return Padding(
                                                 padding:
                                                     const EdgeInsets.symmetric(
@@ -735,7 +850,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                                     Checkbox(
                                                       value: isCompleted,
                                                       onChanged: (bool? value) async {
-                                                        // ★修正：モデルデータ型か古いデータ型かで更新ロジックを切り替える
                                                         if (task['isNormalTaskModel'] ==
                                                             true) {
                                                           final normalBox =
@@ -756,7 +870,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                                               originalTask,
                                                             );
                                                           }
-                                                          _loadTasksFromHive(); // リロード
+                                                          _loadTasksFromHive();
                                                         } else {
                                                           final box = Hive.box(
                                                             'tasks',
@@ -807,7 +921,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                                         size: 20,
                                                       ),
                                                       onPressed: () async {
-                                                        // ★修正：モデルデータ型か古いデータ型かで削除ロジックを切り替える
                                                         if (task['isNormalTaskModel'] ==
                                                             true) {
                                                           final normalBox =
@@ -891,6 +1004,11 @@ class _MyHomePageState extends State<MyHomePage> {
                               final task = entry.value;
                               final isCompleted =
                                   task['isCompleted'] as bool? ?? false;
+                              final timeStr = task['time'] as String? ?? '';
+                              final hasTime =
+                                  timeStr.isNotEmpty &&
+                                  timeStr != '00:00' &&
+                                  timeStr != '時刻未設定';
 
                               return Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -901,7 +1019,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                     Checkbox(
                                       value: isCompleted,
                                       onChanged: (bool? value) async {
-                                        // ★修正：モデルデータ型か古いデータ型かで更新ロジックを切り替える
                                         if (task['isNormalTaskModel'] == true) {
                                           final normalBox =
                                               Hive.box<NormalTask>(
@@ -938,32 +1055,37 @@ class _MyHomePageState extends State<MyHomePage> {
                                         }
                                       },
                                     ),
-                                    Container(
-                                      width: 65,
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: isCompleted
-                                            ? Colors.grey.shade200
-                                            : Colors.deepPurple.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          task['time'] ?? '時刻未設定',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                            color: isCompleted
-                                                ? Colors.grey
-                                                : Colors.deepPurple,
-                                            decoration: isCompleted
-                                                ? TextDecoration.lineThrough
-                                                : null,
+                                    if (hasTime) ...[
+                                      Container(
+                                        width: 65,
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: isCompleted
+                                              ? Colors.grey.shade200
+                                              : Colors.deepPurple.shade50,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            timeStr,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                              color: isCompleted
+                                                  ? Colors.grey
+                                                  : Colors.deepPurple,
+                                              decoration: isCompleted
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
+                                      const SizedBox(width: 12),
+                                    ],
+
                                     Expanded(
                                       child: Text(
                                         task['text'] ?? '',
@@ -986,7 +1108,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                         size: 20,
                                       ),
                                       onPressed: () async {
-                                        // ★修正：モデルデータ型か古いデータ型かで削除ロジックを切り替える
                                         if (task['isNormalTaskModel'] == true) {
                                           final normalBox =
                                               Hive.box<NormalTask>(
@@ -1127,14 +1248,10 @@ class _MyHomePageState extends State<MyHomePage> {
                   const SizedBox(height: 12),
                   _buildFabMenuItem('予定を追加する', () async {
                     setState(() => _isFabExpanded = false);
-
-                    // ★修正：AddEventScreen は登録完了時に true を返す
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const AddEventScreen()),
                     );
-
-                    // true が戻ってきたらデータが新しく追加されたので画面をリロードする
                     if (result == true) {
                       _loadTasksFromHive();
                     }
