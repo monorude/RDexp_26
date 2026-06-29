@@ -6,8 +6,8 @@ import 'period_time_store.dart';
 const String _kAutoDeleteEnabled = 'auto_delete_enabled';
 const String _kAutoDeleteDuration = 'auto_delete_duration';
 
-// バグ報告フォームのURL（プレースホルダー）
-const String _bugReportUrl = 'https://example.com/bug-report';
+// バグ報告フォームのURL
+const String _bugReportUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfubyfu5estIsiRhbL5yZUKtsndyTm-9JCHi0daQPYd_tZqFA/viewform?usp=header';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
