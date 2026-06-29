@@ -1191,41 +1191,25 @@ class _MyHomePageState extends State<MyHomePage> {
               backgroundColor: Theme.of(context).colorScheme.inversePrimary,
               title: Text(_currentIndex == 0 ? widget.title : '時間割設定'),
             ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
-              child: Text(
-                'aaa',
-                style: TextStyle(color: Colors.white, fontSize: 24),
-              ),
-            ),
-            const ListTile(
-              leading: Icon(Icons.message),
-              title: Text('Messages'),
-            ),
-            const ListTile(
-              leading: Icon(Icons.account_circle),
-              title: Text('Profile'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('hoges'),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingPage()),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
       body: Stack(
         children: [
           IndexedStack(index: _currentIndex, children: _tabs),
+          if (_currentIndex == 0)
+            Positioned(
+              left: 16,
+              bottom: 16,
+              child: FloatingActionButton(
+                heroTag: 'settingsFab',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingPage()),
+                  );
+                },
+                tooltip: '設定',
+                child: const Icon(Icons.settings),
+              ),
+            ),
           if (_isFabExpanded) ...[
             Positioned.fill(
               child: GestureDetector(
