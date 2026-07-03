@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -129,7 +128,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
-  bool _isFabExpanded = false;
   int _notificationId = 0;
 
   Future<void> scheduleNotification({
@@ -654,20 +652,6 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        elevation: 6,
-      ),
-      child: Text(label),
     );
   }
 
@@ -1210,51 +1194,22 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: const Icon(Icons.settings),
               ),
             ),
-          if (_isFabExpanded) ...[
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => setState(() => _isFabExpanded = false),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 16,
-              bottom: 80,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildFabMenuItem('繰り返し予定を追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('予定を追加する', () async {
-                    setState(() => _isFabExpanded = false);
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddEventScreen()),
-                    );
-                    if (result == true) {
-                      _loadTasksFromHive();
-                    }
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('タスクを追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: () => setState(() => _isFabExpanded = !_isFabExpanded),
-              tooltip: 'メニューを開く',
-              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
+              heroTag: 'addFab',
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                );
+                if (result == true) {
+                  _loadTasksFromHive();
+                }
+              },
+              tooltip: '予定を追加する',
+              child: const Icon(Icons.add),
             )
           : null,
       bottomNavigationBar: BottomNavigationBar(
@@ -1262,7 +1217,6 @@ class _MyHomePageState extends State<MyHomePage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
-            _isFabExpanded = false;
           });
           if (index == 0) {
             _loadTasksFromHive();
