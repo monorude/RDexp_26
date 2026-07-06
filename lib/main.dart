@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 import 'timetable_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/table_calender_sample.dart';
@@ -129,7 +128,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
-  bool _isFabExpanded = false;
   int _notificationId = 0;
 
   Future<void> scheduleNotification({
@@ -657,20 +655,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _buildFabMenuItem(String label, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        elevation: 6,
-      ),
-      child: Text(label),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     int? selectedDayIndex;
@@ -1191,86 +1175,41 @@ class _MyHomePageState extends State<MyHomePage> {
               backgroundColor: Theme.of(context).colorScheme.inversePrimary,
               title: Text(_currentIndex == 0 ? widget.title : '時間割設定'),
             ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
-              child: Text(
-                'aaa',
-                style: TextStyle(color: Colors.white, fontSize: 24),
-              ),
-            ),
-            const ListTile(
-              leading: Icon(Icons.message),
-              title: Text('Messages'),
-            ),
-            const ListTile(
-              leading: Icon(Icons.account_circle),
-              title: Text('Profile'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('hoges'),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingPage()),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
       body: Stack(
         children: [
           IndexedStack(index: _currentIndex, children: _tabs),
-          if (_isFabExpanded) ...[
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => setState(() => _isFabExpanded = false),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
-              ),
-            ),
+          if (_currentIndex == 0)
             Positioned(
-              right: 16,
-              bottom: 80,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildFabMenuItem('繰り返し予定を追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('予定を追加する', () async {
-                    setState(() => _isFabExpanded = false);
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddEventScreen()),
-                    );
-                    if (result == true) {
-                      _loadTasksFromHive();
-                    }
-                  }),
-                  const SizedBox(height: 12),
-                  _buildFabMenuItem('タスクを追加する', () {
-                    setState(() => _isFabExpanded = false);
-                  }),
-                ],
+              left: 16,
+              bottom: 16,
+              child: FloatingActionButton(
+                heroTag: 'settingsFab',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingPage()),
+                  );
+                },
+                tooltip: '設定',
+                child: const Icon(Icons.settings),
               ),
             ),
-          ],
         ],
       ),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
-              onPressed: () => setState(() => _isFabExpanded = !_isFabExpanded),
-              tooltip: 'メニューを開く',
-              child: Icon(_isFabExpanded ? Icons.close : Icons.add),
+              heroTag: 'addFab',
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                );
+                if (result == true) {
+                  _loadTasksFromHive();
+                }
+              },
+              tooltip: '予定を追加する',
+              child: const Icon(Icons.add),
             )
           : null,
       bottomNavigationBar: BottomNavigationBar(
@@ -1278,7 +1217,6 @@ class _MyHomePageState extends State<MyHomePage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
-            _isFabExpanded = false;
           });
           if (index == 0) {
             _loadTasksFromHive();
