@@ -130,6 +130,12 @@ class _MyHomePageState extends State<MyHomePage> {
   int _currentIndex = 0;
   int _notificationId = 0;
 
+  bool _isCalendarCollapsed = false;
+
+  // ✨ 新しく追加：プロファイル管理用の変数
+  List<String> _profiles = ['1年次'];
+  String _currentProfile = '1年次';
+
   Future<void> scheduleNotification({
     required DateTime dateTime,
     required String title,
@@ -331,11 +337,38 @@ class _MyHomePageState extends State<MyHomePage> {
     _loadTasksFromHive();
   }
 
-  // ★修正：従来のデータと新モデルデータを統合する関数（中にあったウィジェット関数は外に出しました）
+  // ★修正：従来のデータと新モデルデータを統合する関数
   void _loadTasksFromHive() {
     final box = Hive.box('tasks');
 
-    final savedTt1 = box.get('timetable1');
+    // 💡 互換性対応：初めてプロファイル機能を使う場合、古いデータを「1年次」に自動移行する
+    if (!box.containsKey('profiles_list')) {
+      _profiles = ['1年次'];
+      _currentProfile = '1年次';
+      box.put('profiles_list', _profiles);
+      box.put('current_profile_name', _currentProfile);
+
+      if (box.containsKey('timetable1'))
+        box.put('1年次_timetable1', box.get('timetable1'));
+      if (box.containsKey('timetable2'))
+        box.put('1年次_timetable2', box.get('timetable2'));
+      if (box.containsKey('sem1_start'))
+        box.put('1年次_sem1_start', box.get('sem1_start'));
+      if (box.containsKey('sem1_end'))
+        box.put('1年次_sem1_end', box.get('sem1_end'));
+      if (box.containsKey('sem2_start'))
+        box.put('1年次_sem2_start', box.get('sem2_start'));
+      if (box.containsKey('sem2_end'))
+        box.put('1年次_sem2_end', box.get('sem2_end'));
+    } else {
+      _profiles = List<String>.from(box.get('profiles_list'));
+      _currentProfile =
+          box.get('current_profile_name', defaultValue: _profiles.first)
+              as String;
+    }
+
+    // 💡 現在選択されているプロファイル固有のデータを読み込む仕様に変更
+    final savedTt1 = box.get('${_currentProfile}_timetable1');
     if (savedTt1 is List) {
       timetable1 = savedTt1
           .map((row) => List<String>.from(row as List))
@@ -347,7 +380,7 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     }
 
-    final savedTt2 = box.get('timetable2');
+    final savedTt2 = box.get('${_currentProfile}_timetable2');
     if (savedTt2 is List) {
       timetable2 = savedTt2
           .map((row) => List<String>.from(row as List))
@@ -359,15 +392,27 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     }
 
-    final s1StartStr = box.get('sem1_start');
-    final s1EndStr = box.get('sem1_end');
-    if (s1StartStr != null) semester1Start = DateTime.parse(s1StartStr);
-    if (s1EndStr != null) semester1End = DateTime.parse(s1EndStr);
+    final s1StartStr = box.get('${_currentProfile}_sem1_start');
+    final s1EndStr = box.get('${_currentProfile}_sem1_end');
+    if (s1StartStr != null)
+      semester1Start = DateTime.parse(s1StartStr);
+    else
+      semester1Start = null;
+    if (s1EndStr != null)
+      semester1End = DateTime.parse(s1EndStr);
+    else
+      semester1End = null;
 
-    final s2StartStr = box.get('sem2_start');
-    final s2EndStr = box.get('sem2_end');
-    if (s2StartStr != null) semester2Start = DateTime.parse(s2StartStr);
-    if (s2EndStr != null) semester2End = DateTime.parse(s2EndStr);
+    final s2StartStr = box.get('${_currentProfile}_sem2_start');
+    final s2EndStr = box.get('${_currentProfile}_sem2_end');
+    if (s2StartStr != null)
+      semester2Start = DateTime.parse(s2StartStr);
+    else
+      semester2Start = null;
+    if (s2EndStr != null)
+      semester2End = DateTime.parse(s2EndStr);
+    else
+      semester2End = null;
 
     plainTasks.clear();
     periodTasks.clear();
@@ -578,7 +623,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       final task = entry.value;
                       final isCompleted = task['isCompleted'] as bool? ?? false;
 
-                      // ★ 修正：00:00 や 時刻未設定 なら表示しないように判定
                       final timeStr = task['time'] as String? ?? '';
                       final hasTime =
                           timeStr.isNotEmpty &&
@@ -670,25 +714,38 @@ class _MyHomePageState extends State<MyHomePage> {
     final List<Widget> _tabs = [
       Column(
         children: [
-          Center(
-            child: Container(
-              width: 288,
-              height: 24,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
-                color: Colors.white,
-              ),
-              child: ClockTimer(),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 240,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    color: Colors.white,
+                  ),
+                  child: ClockTimer(),
+                ),
+              ],
             ),
           ),
 
-          // ★ カレンダーの上に今日のToDoリストを配置
           _buildTodayTodoWidget(),
 
           TableCalendarSample(
+            isWeekFormat: _isCalendarCollapsed,
+            onFormatChanged: (isWeek) {
+              setState(() {
+                _isCalendarCollapsed = isWeek;
+              });
+            },
             onDayTapped: (selectedDay) {
               setState(() {
                 _selectedDay = selectedDay;
+                _isCalendarCollapsed = true;
               });
             },
             assignments: assignments,
@@ -1128,6 +1185,7 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
 
+      // 💡 プロファイル管理に対応させた TimetableScreen
       TimetableScreen(
         timetable1: timetable1,
         timetable2: timetable2,
@@ -1135,33 +1193,96 @@ class _MyHomePageState extends State<MyHomePage> {
         semester1End: semester1End,
         semester2Start: semester2Start,
         semester2End: semester2End,
+
+        // ✨ 追加したプロファイル用引数の受け渡しと各処理
+        currentProfile: _currentProfile,
+        profiles: _profiles,
+        onProfileChanged: (newProfile) async {
+          setState(() {
+            _currentProfile = newProfile;
+          });
+          await Hive.box('tasks').put('current_profile_name', newProfile);
+          _loadTasksFromHive(); // 切り替えたプロファイルの時間割データを再読込
+        },
+        onProfileAdded: (newProfileName) async {
+          if (!_profiles.contains(newProfileName)) {
+            setState(() {
+              _profiles.add(newProfileName);
+              _currentProfile = newProfileName;
+            });
+            final box = Hive.box('tasks');
+            await box.put('profiles_list', _profiles);
+            await box.put('current_profile_name', _currentProfile);
+
+            // 新しいプロファイル用に、真っ白な時間割枠をHive上に初期化して即時保存
+            final emptyTimetable = List.generate(
+              periods.length,
+              (_) => List.generate(days.length, (_) => ''),
+            );
+            await box.put('${newProfileName}_timetable1', emptyTimetable);
+            await box.put('${newProfileName}_timetable2', emptyTimetable);
+
+            _loadTasksFromHive();
+          }
+        },
+        onProfileDeleted: (deletedProfileName) async {
+          if (_profiles.length > 1) {
+            setState(() {
+              _profiles.remove(deletedProfileName);
+              _currentProfile = _profiles.first; // 削除されたら一番最初のプロファイルに戻す
+            });
+            final box = Hive.box('tasks');
+            await box.put('profiles_list', _profiles);
+            await box.put('current_profile_name', _currentProfile);
+
+            // 該当プロファイルの時間割・期間データを一括削除
+            await box.delete('${deletedProfileName}_timetable1');
+            await box.delete('${deletedProfileName}_timetable2');
+            await box.delete('${deletedProfileName}_sem1_start');
+            await box.delete('${deletedProfileName}_sem1_end');
+            await box.delete('${deletedProfileName}_sem2_start');
+            await box.delete('${deletedProfileName}_sem2_end');
+
+            _loadTasksFromHive();
+          }
+        },
         onTimetable1Changed: (updated) async {
           setState(() => timetable1 = updated);
-          await Hive.box(
-            'tasks',
-          ).put('timetable1', updated.map((r) => r.toList()).toList());
+          await Hive.box('tasks').put(
+            '${_currentProfile}_timetable1',
+            updated.map((r) => r.toList()).toList(),
+          );
         },
         onTimetable2Changed: (updated) async {
           setState(() => timetable2 = updated);
-          await Hive.box(
-            'tasks',
-          ).put('timetable2', updated.map((r) => r.toList()).toList());
+          await Hive.box('tasks').put(
+            '${_currentProfile}_timetable2',
+            updated.map((r) => r.toList()).toList(),
+          );
         },
         onSemester1RangeChanged: (start, end) async {
           setState(() {
             semester1Start = start;
             semester1End = end;
           });
-          await Hive.box('tasks').put('sem1_start', start?.toIso8601String());
-          await Hive.box('tasks').put('sem1_end', end?.toIso8601String());
+          await Hive.box(
+            'tasks',
+          ).put('${_currentProfile}_sem1_start', start?.toIso8601String());
+          await Hive.box(
+            'tasks',
+          ).put('${_currentProfile}_sem1_end', end?.toIso8601String());
         },
         onSemester2RangeChanged: (start, end) async {
           setState(() {
             semester2Start = start;
             semester2End = end;
           });
-          await Hive.box('tasks').put('sem2_start', start?.toIso8601String());
-          await Hive.box('tasks').put('sem2_end', end?.toIso8601String());
+          await Hive.box(
+            'tasks',
+          ).put('${_currentProfile}_sem2_start', start?.toIso8601String());
+          await Hive.box(
+            'tasks',
+          ).put('${_currentProfile}_sem2_end', end?.toIso8601String());
         },
       ),
 
