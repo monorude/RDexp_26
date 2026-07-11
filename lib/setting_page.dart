@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'period_time_store.dart';
+import 'NormalTask.dart';
 
 const String _kAutoDeleteEnabled = 'auto_delete_enabled';
 const String _kAutoDeleteDuration = 'auto_delete_duration';
 
 // バグ報告フォームのURL
-const String _bugReportUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfubyfu5estIsiRhbL5yZUKtsndyTm-9JCHi0daQPYd_tZqFA/viewform?usp=header';
+const String _bugReportUrl =
+    'https://docs.google.com/forms/d/e/1FAIpQLSfubyfu5estIsiRhbL5yZUKtsndyTm-9JCHi0daQPYd_tZqFA/viewform?usp=header';
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -40,8 +42,10 @@ class _SettingPageState extends State<SettingPage> {
       (i) => PeriodTimeStore.getTime(i + 1),
     );
     final box = Hive.box('tasks');
-    _autoDeleteEnabled = box.get(_kAutoDeleteEnabled, defaultValue: false) as bool;
-    _autoDeleteDuration = box.get(_kAutoDeleteDuration, defaultValue: '1ヶ月') as String;
+    _autoDeleteEnabled =
+        box.get(_kAutoDeleteEnabled, defaultValue: false) as bool;
+    _autoDeleteDuration =
+        box.get(_kAutoDeleteDuration, defaultValue: '1ヶ月') as String;
   }
 
   Future<void> _pickTime(int periodIndex) async {
@@ -88,6 +92,15 @@ class _SettingPageState extends State<SettingPage> {
         return DateTime.tryParse(dateStr) != null;
       }).toList();
       await box.deleteAll(taskKeys);
+      final normalBox = Hive.box<NormalTask>('normalTasks');
+      await normalBox.clear();
+
+      // 削除が完了したことを画面下部にトースト表示（親切設計）
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('すべてのタスクを削除しました')));
+      }
     }
   }
 
@@ -108,9 +121,9 @@ class _SettingPageState extends State<SettingPage> {
             title: Text(
               '授業開始時間の設定',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             children: List.generate(
               _periodCount,
@@ -193,9 +206,7 @@ class _SettingPageState extends State<SettingPage> {
             title: Text('バージョン'),
             trailing: Text('v0.10.0'),
           ),
-          const ListTile(
-            leading: Text('RDExp_13_2@2026'),
-          ),
+          const ListTile(leading: Text('RDExp_13_2@2026')),
           const SizedBox(height: 16),
         ],
       ),
@@ -215,9 +226,9 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

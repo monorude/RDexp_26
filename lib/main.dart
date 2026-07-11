@@ -1305,11 +1305,12 @@ class _MyHomePageState extends State<MyHomePage> {
               bottom: 16,
               child: FloatingActionButton(
                 heroTag: 'settingsFab',
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const SettingPage()),
                   );
+                  _loadTasksFromHive();
                 },
                 tooltip: '設定',
                 child: const Icon(Icons.settings),

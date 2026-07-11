@@ -17,42 +17,7 @@ class MyTabScreen extends StatelessWidget {
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           title: const Text('タスク一覧'),
         ),
-        // 左側の三本線メニュー（ドロワー）の設定
-        drawer: Drawer(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: <Widget>[
-              const DrawerHeader(
-                decoration: BoxDecoration(color: Colors.blue),
-                child: Text(
-                  'aaa',
-                  style: TextStyle(color: Colors.white, fontSize: 24),
-                ),
-              ),
-              const ListTile(
-                leading: Icon(Icons.message),
-                title: Text('Messages'),
-              ),
-              const ListTile(
-                leading: Icon(Icons.account_circle),
-                title: Text('Profile'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings),
-                title: const Text('hoges'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingPage(),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
+
         body: Column(
           children: [
             ColoredBox(
