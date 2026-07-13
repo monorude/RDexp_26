@@ -204,7 +204,7 @@ class _SettingPageState extends State<SettingPage> {
           const ListTile(
             leading: Icon(Icons.tag),
             title: Text('バージョン'),
-            trailing: Text('v0.10.0'),
+            trailing: Text('v0.12.0'),
           ),
           const ListTile(leading: Text('RDExp_13_2@2026')),
           const SizedBox(height: 16),
