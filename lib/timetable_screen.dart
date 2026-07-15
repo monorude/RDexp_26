@@ -210,21 +210,24 @@ class _TimetableScreenState extends State<TimetableScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✨ 現在選択されているテーマカラー（プライマリ）を取得
+    final themeColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       body: Column(
         children: [
-          // 💜 変更点：プロファイル管理バーを上品な薄紫ベースに変更
+          // 🎨 変更点：プロファイル管理バーをテーマカラーの透過ベースに変更
           Container(
             padding: const EdgeInsets.symmetric(
               vertical: 4.0,
               horizontal: 12.0,
             ),
-            color: Colors.deepPurple.shade50, // ほんのり優しい薄紫
+            color: themeColor.withOpacity(0.08), // ほんのり優しいテーマ背景色
             child: Row(
               children: [
                 Icon(
                   Icons.folder_shared,
-                  color: Colors.deepPurple.shade700, // 落ち着いたディープパープル
+                  color: themeColor, // テーマカラーのプライマリ
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -232,10 +235,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 DropdownButton<String>(
                   value: widget.currentProfile,
                   underline: Container(), // 下線を消す
-                  icon: Icon(
-                    Icons.arrow_drop_down,
-                    color: Colors.deepPurple.shade700,
-                  ),
+                  icon: Icon(Icons.arrow_drop_down, color: themeColor),
                   items: widget.profiles.map((String value) {
                     return DropdownMenuItem<String>(
                       value: value,
@@ -243,7 +243,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                         value,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.deepPurple.shade900, // 読みやすい濃い紫
+                          color: themeColor, // 統一感のあるテキスト色
                         ),
                       ),
                     );
@@ -257,10 +257,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 const Spacer(),
                 // 新規作成ボタン
                 IconButton(
-                  icon: Icon(
-                    Icons.add_circle_outline,
-                    color: Colors.deepPurple.shade700,
-                  ),
+                  icon: Icon(Icons.add_circle_outline, color: themeColor),
                   onPressed: _showAddProfileDialog,
                   tooltip: '新しいプロファイルを作成',
                 ),
@@ -292,13 +289,23 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 Row(
                   children: [
                     ChoiceChip(
-                      label: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('前期'),
+                      label: SizedBox(
+                        width: 30,
+                        height: 20,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: const Text(
+                            '前期',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                       ),
                       labelPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
+                        horizontal: 4,
+                        vertical: 2,
                       ),
                       selected: _editingSemester == 1,
                       onSelected: (bool selected) {
@@ -307,13 +314,23 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                     const SizedBox(width: 8),
                     ChoiceChip(
-                      label: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('後期'),
+                      label: SizedBox(
+                        width: 30,
+                        height: 20,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: const Text(
+                            '後期',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                       ),
                       labelPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
+                        horizontal: 4,
+                        vertical: 2,
                       ),
                       selected: _editingSemester == 2,
                       onSelected: (bool selected) {
@@ -322,6 +339,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                   ],
                 ),
+
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerRight,
@@ -344,11 +362,11 @@ class _TimetableScreenState extends State<TimetableScreen> {
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
-                      // 💜 変更点：有効期間ボタンの文字と枠線をテーマカラーの紫に同調
+                      // 🎨 変更点：有効期間ボタンの文字と枠線をテーマカラーに同調
                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.deepPurple.shade700,
+                        foregroundColor: themeColor,
                         backgroundColor: Colors.white,
-                        side: BorderSide(color: Colors.deepPurple.shade200),
+                        side: BorderSide(color: themeColor.withOpacity(0.3)),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 4,
@@ -434,10 +452,10 @@ class _TimetableScreenState extends State<TimetableScreen> {
                                     _editSubject(periodIndex, dayIndex),
                                 child: Container(
                                   height: 80,
-                                  // 💜 変更点：入力済みセルの背景をほんのり薄紫（shade50）に
+                                  // 🎨 変更点：入力済みセルの背景をほんのりテーマカラーの透過色に
                                   color: subject.isEmpty
                                       ? Colors.white
-                                      : Colors.deepPurple.shade50,
+                                      : themeColor.withOpacity(0.1),
                                   padding: const EdgeInsets.all(4.0),
                                   child: Center(
                                     child: Text(

@@ -63,18 +63,49 @@ void main() async {
   runApp(const MyApp());
 }
 
+// ✨ ① ValueListenableBuilder を導入して Hive の theme_color の変化を監視するように変更
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Home',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'ホーム'),
+    return ValueListenableBuilder(
+      valueListenable: Hive.box('tasks').listenable(keys: ['theme_color']),
+      builder: (context, Box box, child) {
+        // 保存されている色を取得（デフォルトは purple）
+        final colorString =
+            box.get('theme_color', defaultValue: 'purple') as String;
+
+        Color seedColor;
+        switch (colorString) {
+          case 'blue':
+            seedColor = Colors.blue;
+            break;
+          case 'red':
+            seedColor = Colors.red;
+            break;
+          case 'green':
+            seedColor = Colors.green;
+            break;
+          case 'orange':
+            seedColor = Colors.orange;
+            break;
+          case 'purple':
+          default:
+            seedColor = Colors.deepPurple;
+            break;
+        }
+
+        return MaterialApp(
+          title: 'Home',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: seedColor),
+            useMaterial3: true,
+          ),
+          home: const MyHomePage(title: 'ホーム'),
+        );
+      },
     );
   }
 }
@@ -501,14 +532,17 @@ class _MyHomePageState extends State<MyHomePage> {
     final bool hasNoTasks =
         allTodayPeriodTasks.isEmpty && allTodayPlainTasks.isEmpty;
 
+    // ✨ ② テーマカラー（プライマリ）を動的に取得
+    final themeColor = Theme.of(context).colorScheme.primary;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(12),
       constraints: const BoxConstraints(maxHeight: 160),
       decoration: BoxDecoration(
-        color: Colors.deepPurple.shade50,
+        color: themeColor.withOpacity(0.08), // 薄めの背景色
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.deepPurple.shade100),
+        border: Border.all(color: themeColor.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -516,18 +550,14 @@ class _MyHomePageState extends State<MyHomePage> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.check_circle_outline,
-                color: Colors.deepPurple,
-                size: 20,
-              ),
+              Icon(Icons.check_circle_outline, color: themeColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 '今日のToDoリスト (${DateFormat('M/d', 'ja').format(today)})',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple,
+                  color: themeColor,
                 ),
               ),
             ],
@@ -779,12 +809,13 @@ class _MyHomePageState extends State<MyHomePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (selectedDayIndex != null) ...[
+                            // ✨ ③ 曜日の時間割ヘッダーをテーマカラーに変更
                             Text(
                               '${days[selectedDayIndex]}曜日の時間割 (${_getSemesterNameForDate(_selectedDay!)})',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.blueAccent,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -829,11 +860,15 @@ class _MyHomePageState extends State<MyHomePage> {
                                     children: [
                                       Row(
                                         children: [
+                                          // ✨ ④ 限数ラベルの背景色をテーマカラーの透過色に変更
                                           Container(
                                             width: 50,
                                             padding: const EdgeInsets.all(4),
                                             decoration: BoxDecoration(
-                                              color: Colors.blue.shade100,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withOpacity(0.15),
                                               borderRadius:
                                                   BorderRadius.circular(4),
                                             ),
@@ -1029,12 +1064,13 @@ class _MyHomePageState extends State<MyHomePage> {
                             const SizedBox(height: 16),
                             const Divider(color: Colors.grey),
                             const SizedBox(height: 8),
-                            const Text(
+                            // ✨ ⑤ 「その他の予定・タスク」のヘッダー色をテーマカラーに変更
+                            Text(
                               'その他の予定・タスク',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -1097,13 +1133,17 @@ class _MyHomePageState extends State<MyHomePage> {
                                       },
                                     ),
                                     if (hasTime) ...[
+                                      // ✨ ⑥ 時間ラベル部分の文字色、背景色をテーマカラーに変更
                                       Container(
                                         width: 65,
                                         padding: const EdgeInsets.all(4),
                                         decoration: BoxDecoration(
                                           color: isCompleted
                                               ? Colors.grey.shade200
-                                              : Colors.deepPurple.shade50,
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withOpacity(0.08),
                                           borderRadius: BorderRadius.circular(
                                             4,
                                           ),
@@ -1116,7 +1156,9 @@ class _MyHomePageState extends State<MyHomePage> {
                                               fontSize: 12,
                                               color: isCompleted
                                                   ? Colors.grey
-                                                  : Colors.deepPurple,
+                                                  : Theme.of(
+                                                      context,
+                                                    ).colorScheme.primary,
                                               decoration: isCompleted
                                                   ? TextDecoration.lineThrough
                                                   : null,

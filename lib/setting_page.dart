@@ -6,6 +6,7 @@ import 'NormalTask.dart';
 
 const String _kAutoDeleteEnabled = 'auto_delete_enabled';
 const String _kAutoDeleteDuration = 'auto_delete_duration';
+const String _kThemeColor = 'theme_color'; // ✨ テーマカラーのキーを追加
 
 // バグ報告フォームのURL
 const String _bugReportUrl =
@@ -25,6 +26,7 @@ class _SettingPageState extends State<SettingPage> {
 
   bool _autoDeleteEnabled = false;
   String _autoDeleteDuration = '1ヶ月';
+  String _themeColor = 'purple'; // ✨ テーマカラーの状態変数を追加
 
   static const List<String> _durationOptions = [
     '1ヶ月',
@@ -33,6 +35,15 @@ class _SettingPageState extends State<SettingPage> {
     '1年',
     '2年',
   ];
+
+  // ✨ テーマカラーの選択肢マッピング（内部値 : 表示名）
+  static const Map<String, String> _themeOptions = {
+    'purple': 'パープル（デフォルト）',
+    'blue': 'ブルー',
+    'red': 'レッド',
+    'green': 'グリーン',
+    'orange': 'オレンジ',
+  };
 
   @override
   void initState() {
@@ -46,6 +57,9 @@ class _SettingPageState extends State<SettingPage> {
         box.get(_kAutoDeleteEnabled, defaultValue: false) as bool;
     _autoDeleteDuration =
         box.get(_kAutoDeleteDuration, defaultValue: '1ヶ月') as String;
+
+    // ✨ 保存されているテーマカラーを取得
+    _themeColor = box.get(_kThemeColor, defaultValue: 'purple') as String;
   }
 
   Future<void> _pickTime(int periodIndex) async {
@@ -95,7 +109,6 @@ class _SettingPageState extends State<SettingPage> {
       final normalBox = Hive.box<NormalTask>('normalTasks');
       await normalBox.clear();
 
-      // 削除が完了したことを画面下部にトースト表示（親切設計）
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -134,6 +147,28 @@ class _SettingPageState extends State<SettingPage> {
               ),
             ),
           ),
+
+          // ✨ 新設：デザイン設定セクション
+          const Divider(height: 32),
+          _SectionHeader(title: 'デザイン設定'),
+          ListTile(
+            title: const Text('テーマカラー'),
+            trailing: DropdownButton<String>(
+              value: _themeColor,
+              items: _themeOptions.entries
+                  .map(
+                    (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _themeColor = value);
+                  Hive.box('tasks').put(_kThemeColor, value); // Hiveに即時保存
+                }
+              },
+            ),
+          ),
+
           const Divider(height: 32),
           _SectionHeader(title: '完了済みタスクの自動削除'),
           SwitchListTile(
